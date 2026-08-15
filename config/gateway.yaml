@@ -1,0 +1,19 @@
+# MCP Gateway 配置文件
+# 优先级：代码默认值 < 本文件 < 环境变量（GATEWAY_ 前缀，如 GATEWAY_PORT=9000）
+gateway:
+  app_name: mcp-gateway
+  version: 0.1.0
+  host: 0.0.0.0
+  port: 8000
+  log_level: INFO
+
+# MCP Server 声明列表（阶段 2 起接入，YAML 声明、无需改代码）
+# 示例：
+#   - name: demo_sql
+#     transport: stdio            # stdio / sse / http
+#     command: uv
+#     args: ["run", "python", "servers/demo_sql_server/server.py"]
+#   - name: remote_api
+#     transport: http
+#     url: http://localhost:9000/mcp
+servers: []

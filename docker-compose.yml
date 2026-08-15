@@ -1,0 +1,10 @@
+# 阶段 1：仅 gateway；阶段 4 追加 demo_sql_server
+services:
+  gateway:
+    build: .
+    image: mcp-gateway:dev
+    ports:
+      - "8000:8000"
+    environment:
+      GATEWAY_LOG_LEVEL: INFO
+    restart: unless-stopped
