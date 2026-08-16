@@ -83,7 +83,7 @@ tests/                    # 单元测试
 ## 开发路线图
 
 - [x] 阶段 1：工程骨架 + CI（/health、/metrics、配置中心、结构化日志）
-- [ ] 阶段 2：协议层打通（stdio/SSE/HTTP 三传输客户端 + 工具注册中心 + demo server）
+- [x] 阶段 2：协议层打通（stdio/SSE/HTTP 三传输客户端 + 工具注册中心 + demo server）
 - [ ] 阶段 3：统一 API（GET /tools、POST /tools/{name}/call）+ API Key 鉴权 + 令牌桶限流
 - [ ] 阶段 4：可观测完善 + demo_sql_server（NL2SQL）+ 部署上线
 - [ ] 阶段 5：Agent 调用示例 + 开源推广

@@ -7,13 +7,26 @@ gateway:
   port: 8000
   log_level: INFO
 
-# MCP Server 声明列表（阶段 2 起接入，YAML 声明、无需改代码）
+# API Key 鉴权配置
+# db_path：SQLite 存储路径（":memory:" 为纯内存，重启即丢）
+# api_keys：启动时种子写入（已存在则跳过）；演示 Key 明文入库仅为 MVP 方便，
+#          生产环境应改用密钥管理/环境变量下发
+auth:
+  db_path: data/gateway.db
+  api_keys:
+    - key: dev-key-please-change
+      name: demo
+      rate_limit_per_minute: 60
+
+# MCP Server 声明列表（YAML 声明、无需改代码）
 # 示例：
-#   - name: demo_sql
-#     transport: stdio            # stdio / sse / http
-#     command: uv
-#     args: ["run", "python", "servers/demo_sql_server/server.py"]
 #   - name: remote_api
-#     transport: http
+#     transport: http             # stdio / sse / http
 #     url: http://localhost:9000/mcp
-servers: []
+# 说明：stdio 传输由网关拉起子进程，command 解析自 PATH
+# （uv run 启动时即项目 .venv 的 python，自带 mcp 依赖）。
+servers:
+  - name: demo_sql
+    transport: stdio
+    command: python
+    args: ["servers/demo_sql_server/server.py"]

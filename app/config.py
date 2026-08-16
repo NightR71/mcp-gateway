@@ -17,6 +17,8 @@ from pydantic_settings import (
     SettingsConfigDict,
 )
 
+from app.schemas.auth import APIKeyInfo
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG_FILE = BASE_DIR / "config" / "gateway.yaml"
 
@@ -53,6 +55,7 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     log_level: str = "INFO"
+    tool_call_timeout: float = 30.0  # 单次工具调用的读超时（秒）
 
     @classmethod
     def settings_customise_sources(
@@ -101,3 +104,16 @@ def get_server_configs() -> tuple[MCPServerConfig, ...]:
     """获取 YAML 中声明的 MCP Server 列表（进程级缓存）。"""
     servers = _load_yaml(_config_file()).get("servers", [])
     return tuple(MCPServerConfig(**s) for s in servers)
+
+
+class AuthConfig(BaseModel):
+    """鉴权配置（config/gateway.yaml 的 auth 节）。"""
+
+    db_path: str = "data/gateway.db"  # SQLite 路径；":memory:" 为纯内存（测试用）
+    api_keys: list[APIKeyInfo] = []  # 启动时种子写入的 Key（已存在则跳过）
+
+
+@lru_cache
+def get_auth_config() -> AuthConfig:
+    """获取鉴权配置（进程级缓存）。"""
+    return AuthConfig(**_load_yaml(_config_file()).get("auth", {}))

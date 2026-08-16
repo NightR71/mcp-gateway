@@ -1,0 +1,22 @@
+# 测试专用配置：conftest 的 gateway_client fixture 通过 GATEWAY_CONFIG_FILE 指向本文件
+# - SQLite 用 ":memory:"，不产生文件、测试间天然隔离
+# - 两个测试 Key：test-key 正常配额；limited-key 极低配额（专测 429）
+gateway:
+  app_name: mcp-gateway-test
+  log_level: WARNING
+
+auth:
+  db_path: ":memory:"
+  api_keys:
+    - key: test-key
+      name: tester
+      rate_limit_per_minute: 60
+    - key: limited-key
+      name: limited
+      rate_limit_per_minute: 2
+
+servers:
+  - name: demo_sql
+    transport: stdio
+    command: python
+    args: ["servers/demo_sql_server/server.py"]
