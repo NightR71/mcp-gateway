@@ -1,0 +1,19 @@
+# Docker Compose 专用配置（docker-compose.yml 中 GATEWAY_CONFIG_FILE 指向本文件）
+# 与本地开发配置 config/gateway.yaml 的唯一区别：
+# demo_sql 以独立容器运行，网关经 Streamable HTTP 连接，而非 stdio 拉起子进程
+gateway:
+  app_name: mcp-gateway
+  log_level: INFO
+
+auth:
+  db_path: data/gateway.db
+  api_keys:
+    - key: dev-key-please-change
+      name: demo
+      rate_limit_per_minute: 60
+
+servers:
+  - name: demo_sql
+    transport: http
+    # mcp SDK streamable-http 服务默认挂载 /mcp；demo_sql 为 compose 服务名
+    url: http://demo_sql:9001/mcp

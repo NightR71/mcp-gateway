@@ -37,8 +37,13 @@ async def registry() -> AsyncIterator[ToolRegistry]:
 async def test_aggregate_tools_and_call(registry: ToolRegistry) -> None:
     """工具聚合：命名空间前缀、schema 透传、调用路由、状态统计。"""
     tools = registry.list_tools()
-    assert [t.name for t in tools] == ["demo_sql__echo"]
-    tool = tools[0]
+    assert {t.name for t in tools} == {
+        "demo_sql__echo",
+        "demo_sql__ask",
+        "demo_sql__run_sql",
+        "demo_sql__list_tables",
+    }
+    tool = next(t for t in tools if t.name == "demo_sql__echo")
     assert tool.original_name == "echo"
     assert tool.server == "demo_sql"
     assert "message" in tool.input_schema["properties"]
@@ -50,7 +55,7 @@ async def test_aggregate_tools_and_call(registry: ToolRegistry) -> None:
     status = registry.server_status()
     assert len(status) == 1
     assert status[0].connected is True
-    assert status[0].tool_count == 1
+    assert status[0].tool_count == 4
     assert status[0].error is None
 
 

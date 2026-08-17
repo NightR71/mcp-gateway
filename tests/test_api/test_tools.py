@@ -14,9 +14,16 @@ async def test_list_tools_ok(gateway_client: AsyncClient) -> None:
     resp = await gateway_client.get("/tools", headers=AUTH_HEADERS)
     assert resp.status_code == 200
     tools = resp.json()
-    assert [t["name"] for t in tools] == ["demo_sql__echo"]
-    assert tools[0]["server"] == "demo_sql"
-    assert "message" in tools[0]["input_schema"]["properties"]
+    # 阶段 4：demo_sql server 升级为 4 个工具（echo / ask / run_sql / list_tables）
+    assert {t["name"] for t in tools} == {
+        "demo_sql__echo",
+        "demo_sql__ask",
+        "demo_sql__run_sql",
+        "demo_sql__list_tables",
+    }
+    assert all(t["server"] == "demo_sql" for t in tools)
+    echo = next(t for t in tools if t["name"] == "demo_sql__echo")
+    assert "message" in echo["input_schema"]["properties"]
 
 
 async def test_list_tools_unauthorized(gateway_client: AsyncClient) -> None:
@@ -37,6 +44,19 @@ async def test_call_tool_ok(gateway_client: AsyncClient) -> None:
     body = resp.json()
     assert body["is_error"] is False
     assert body["content"][0]["text"] == "echo: hello"
+
+
+async def test_call_tool_ask_nl2sql(gateway_client: AsyncClient) -> None:
+    """NL2SQL 全链路：自然语言 → SQL → 执行，经网关返回答案。"""
+    resp = await gateway_client.post(
+        "/tools/demo_sql__ask/call",
+        headers=AUTH_HEADERS,
+        json={"arguments": {"question": "有多少客户？"}},
+    )
+    assert resp.status_code == 200
+    text = resp.json()["content"][0]["text"]
+    assert "SELECT COUNT(*)" in text
+    assert "5" in text  # 种子数据共 5 个客户
 
 
 async def test_call_tool_not_found(gateway_client: AsyncClient) -> None:

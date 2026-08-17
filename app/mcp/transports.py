@@ -24,8 +24,6 @@ async def create_transport(
     - stdio：拉起本地子进程，经 stdin/stdout 通信
     - sse：HTTP 长连接（远程 server）
     - http：Streamable HTTP（自建远程 server 的推荐方式）
-
-    streamable_http_client 会多 yield 一个 get_session_id，这里抹平差异。
     """
     match config.transport:
         case "stdio":
@@ -42,5 +40,5 @@ async def create_transport(
         case "http":
             if not config.url:
                 raise ValueError(f"server {config.name!r}: http 传输需要 url")
-            async with streamable_http_client(config.url) as (read, write, _get_session_id):
+            async with streamable_http_client(config.url) as (read, write):
                 yield read, write

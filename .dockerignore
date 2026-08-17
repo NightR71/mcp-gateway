@@ -7,7 +7,6 @@ __pycache__/
 tests/
 docs/
 examples/
-servers/
 .github/
 *.md
 !README.md

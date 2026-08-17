@@ -1,5 +1,24 @@
-# 阶段 1：仅 gateway；阶段 4 追加 demo_sql_server
+# 一键启动：gateway + demo_sql_server（阶段 4）
+# demo_sql 以独立容器跑 Streamable HTTP（端口 9001，容器网络内）；
+# gateway 用 config/gateway.docker.yaml，经 http 传输连接 demo_sql。
+# 本地开发仍是 stdio 拉起子进程（config/gateway.yaml），无需 Docker。
 services:
+  demo_sql:
+    build: .
+    image: mcp-gateway:dev
+    command: uv run --no-dev python servers/demo_sql_server/server.py
+    environment:
+      DEMO_SQL_TRANSPORT: http
+      DEMO_SQL_HOST: 0.0.0.0
+      DEMO_SQL_PORT: 9001
+    # 供 gateway 的 depends_on 等待：uvicorn 开始监听即视为就绪
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket;s=socket.create_connection(('localhost',9001),3);s.close()"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
   gateway:
     build: .
     image: mcp-gateway:dev
@@ -7,4 +26,8 @@ services:
       - "8000:8000"
     environment:
       GATEWAY_LOG_LEVEL: INFO
+      GATEWAY_CONFIG_FILE: /app/config/gateway.docker.yaml
+    depends_on:
+      demo_sql:
+        condition: service_healthy
     restart: unless-stopped

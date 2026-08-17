@@ -51,8 +51,23 @@ docker compose up --build                 # 一键启动
 启动后访问：
 
 - `GET /health` — 健康检查
-- `GET /metrics` — Prometheus 指标
+- `GET /metrics` — Prometheus 指标（含工具调用次数/耗时：`mcp_gateway_tool_calls_total`、`mcp_gateway_tool_call_duration_seconds`）
 - `GET /docs` — OpenAPI 交互文档
+
+调用示例（演示 Key 见 `config/gateway.yaml` 的 auth 节）：
+
+```bash
+curl -H "X-API-Key: dev-key-please-change" http://localhost:8000/tools
+
+curl -X POST http://localhost:8000/tools/demo_sql__ask/call \
+     -H "X-API-Key: dev-key-please-change" -H "Content-Type: application/json" \
+     -d '{"arguments": {"question": "有多少客户？"}}'
+```
+
+`demo_sql_server` 内置迷你电商库（customers / products / orders），提供 4 个工具：
+`ask`（中文提问 → 自动生成并执行只读 SQL）、`run_sql`（直接执行只读 SQL）、
+`list_tables`（表结构）、`echo`（链路调试）。NL2SQL 为规则模板引擎，
+离线零依赖，接口与 LLM 实现解耦，可平滑替换。
 
 ## 配置
 
@@ -62,8 +77,19 @@ docker compose up --build                 # 一键启动
 gateway:
   port: 8000
   log_level: INFO
-servers: []   # MCP Server 声明式接入（阶段 2），无需改代码
+auth:                 # API Key 鉴权（SQLite 存储，启动种子写入）
+  db_path: data/gateway.db
+  api_keys:
+    - { key: dev-key-please-change, name: demo, rate_limit_per_minute: 60 }
+servers:              # MCP Server 声明式接入，无需改代码
+  - name: demo_sql
+    transport: stdio  # stdio / sse / http
+    command: python
+    args: ["servers/demo_sql_server/server.py"]
 ```
+
+Docker Compose 使用 `config/gateway.docker.yaml`：demo_sql 以独立容器跑
+Streamable HTTP，网关经 `http://demo_sql:9001/mcp` 连接。
 
 ## 项目结构
 
@@ -84,8 +110,8 @@ tests/                    # 单元测试
 
 - [x] 阶段 1：工程骨架 + CI（/health、/metrics、配置中心、结构化日志）
 - [x] 阶段 2：协议层打通（stdio/SSE/HTTP 三传输客户端 + 工具注册中心 + demo server）
-- [ ] 阶段 3：统一 API（GET /tools、POST /tools/{name}/call）+ API Key 鉴权 + 令牌桶限流
-- [ ] 阶段 4：可观测完善 + demo_sql_server（NL2SQL）+ 部署上线
+- [x] 阶段 3：统一 API（GET /tools、POST /tools/{name}/call）+ API Key 鉴权 + 令牌桶限流
+- [x] 阶段 4：工具调用指标 + demo_sql_server 升级 NL2SQL + docker-compose 双容器（公网部署与演示录屏待补）
 - [ ] 阶段 5：Agent 调用示例 + 开源推广
 
 ## 企业级拓展路径

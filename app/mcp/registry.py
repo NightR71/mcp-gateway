@@ -13,6 +13,7 @@ import mcp.types as mcp_types
 
 from app.config import MCPServerConfig
 from app.core.logging import get_logger
+from app.core.metrics import ToolCallTimer
 from app.mcp.client import MCPClient
 from app.mcp.schemas import (
     NAMESPACE_SEPARATOR,
@@ -92,12 +93,15 @@ class ToolRegistry:
             raise UnknownToolError(namespaced_name) from None
 
     async def call_tool(self, namespaced_name: str, arguments: dict[str, Any]) -> ToolCallResult:
-        """按命名空间工具名路由到对应 server 调用。"""
+        """按命名空间工具名路由到对应 server 调用（全程记录 Prometheus 指标）。"""
         tool = self.get_tool(namespaced_name)
         client = self._clients[tool.server]
-        result: mcp_types.CallToolResult = await client.call_tool(
-            tool.original_name, arguments, read_timeout=self._tool_call_timeout
-        )
+        with ToolCallTimer(namespaced_name, tool.server) as timer:
+            result: mcp_types.CallToolResult = await client.call_tool(
+                tool.original_name, arguments, read_timeout=self._tool_call_timeout
+            )
+            if result.is_error:
+                timer.status = "error"
         return ToolCallResult(
             content=[c.model_dump(mode="json") for c in result.content],
             is_error=result.is_error,

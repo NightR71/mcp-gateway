@@ -13,7 +13,7 @@ async def test_list_servers_ok(gateway_client: AsyncClient) -> None:
     assert servers[0]["name"] == "demo_sql"
     assert servers[0]["transport"] == "stdio"
     assert servers[0]["connected"] is True
-    assert servers[0]["tool_count"] == 1
+    assert servers[0]["tool_count"] == 4  # echo / ask / run_sql / list_tables
     assert servers[0]["error"] is None
 
 
