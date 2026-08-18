@@ -64,3 +64,11 @@ jobs:
         env:
           BASE: ${{ inputs.base_url }}
           KEY: ${{ inputs.api_key }}
+
+      # 诊断：无论成败都打印 /servers（registry 会记录每个 server 的连接错误详情）
+      - name: 诊断 /servers
+        if: always()
+        run: curl -s -H "X-API-Key: $KEY" "$BASE/servers"
+        env:
+          BASE: ${{ inputs.base_url }}
+          KEY: ${{ inputs.api_key }}
