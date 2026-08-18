@@ -1,0 +1,66 @@
+# 公网 Demo 健康检查（手动触发）：从 GitHub Runner（海外网络）验收 Vercel 部署
+# 触发：Actions → demo-health → Run workflow；或用 API dispatch
+name: demo-health
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Demo 基础 URL"
+        required: true
+        default: "https://mcpgatewaydemo1.vercel.app"
+      api_key:
+        description: "演示 API Key"
+        required: true
+        default: "dev-key-please-change"
+
+jobs:
+  accept:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. /health 无需 Key
+        run: |
+          code=$(curl -s -o /tmp/health.json -w "%{http_code}" "$BASE/health")
+          echo "HTTP $code"; cat /tmp/health.json; echo
+          test "$code" = "200"
+        env:
+          BASE: ${{ inputs.base_url }}
+
+      - name: 2. /tools 无 Key 应 401
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/tools")
+          echo "HTTP $code"
+          test "$code" = "401"
+        env:
+          BASE: ${{ inputs.base_url }}
+
+      - name: 3. /tools 带 Key 应列出 4 个工具
+        run: |
+          curl -s -H "X-API-Key: $KEY" "$BASE/tools" | tee /tmp/tools.json
+          python3 -c "
+          import json
+          names = {t['name'] for t in json.load(open('/tmp/tools.json'))}
+          expected = {'demo_sql__echo','demo_sql__ask','demo_sql__run_sql','demo_sql__list_tables'}
+          assert names == expected, f'工具列表不符: {names}'
+          print('tools OK:', sorted(names))
+          "
+        env:
+          BASE: ${{ inputs.base_url }}
+          KEY: ${{ inputs.api_key }}
+
+      - name: 4. NL2SQL 闭环（ask → SQL → 结果）
+        run: |
+          curl -s -X POST "$BASE/tools/demo_sql__ask/call" \
+            -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
+            -d '{"arguments":{"question":"有多少客户？"}}' | tee /tmp/ask.json
+          python3 -c "
+          import json
+          body = json.load(open('/tmp/ask.json'))
+          assert body['is_error'] is False
+          text = body['content'][0]['text']
+          assert 'SELECT COUNT(*)' in text and '| 5 |' in text, text
+          print('NL2SQL OK')
+          "
+        env:
+          BASE: ${{ inputs.base_url }}
+          KEY: ${{ inputs.api_key }}
