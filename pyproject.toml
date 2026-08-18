@@ -29,6 +29,8 @@ target-version = "py312"
 line-length = 100
 
 [[tool.uv.index]]
+# 新版 uv 要求 index 条目必须带 name（Vercel 构建机用的即是新版）
+name = "aliyun"
 url = "https://mirrors.aliyun.com/pypi/simple"
 default = true
 
