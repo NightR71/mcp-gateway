@@ -1,6 +1,7 @@
 """MCP 三种传输（stdio / SSE / Streamable HTTP）的连接管理。
 
 把「按配置建连接」这件事集中在这里，client.py 只面向统一的流对。
+（inprocess 传输不经过流对，由 client.py 的 InProcessClient 直接持有 server 实例。）
 """
 
 from collections.abc import AsyncGenerator

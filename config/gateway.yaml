@@ -21,10 +21,12 @@ auth:
 # MCP Server 声明列表（YAML 声明、无需改代码）
 # 示例：
 #   - name: remote_api
-#     transport: http             # stdio / sse / http
+#     transport: http             # stdio / sse / http / inprocess
 #     url: http://localhost:9000/mcp
 # 说明：stdio 传输由网关拉起子进程，command 解析自 PATH
-# （uv run 启动时即项目 .venv 的 python，自带 mcp 依赖）。
+# （uv run 启动时即项目 .venv 的 python，自带 mcp 依赖）；
+# inprocess 传输不拉子进程，按 module（"package.module:attr"）在网关进程内
+# 直接加载 MCPServer 实例，用于 Serverless 等子进程环境不可控的场景。
 servers:
   - name: demo_sql
     transport: stdio

@@ -14,7 +14,7 @@ import mcp.types as mcp_types
 from app.config import MCPServerConfig
 from app.core.logging import get_logger
 from app.core.metrics import ToolCallTimer
-from app.mcp.client import MCPClient
+from app.mcp.client import InProcessClient, MCPClient, create_client
 from app.mcp.schemas import (
     NAMESPACE_SEPARATOR,
     ServerStatus,
@@ -34,7 +34,7 @@ class ToolRegistry:
     ) -> None:
         self._configs = {c.name: c for c in server_configs if c.enabled}
         self._tool_call_timeout = tool_call_timeout
-        self._clients: dict[str, MCPClient] = {}
+        self._clients: dict[str, MCPClient | InProcessClient] = {}
         self._tools: dict[str, ToolInfo] = {}
         self._tool_server: dict[str, str] = {}  # 命名空间工具名 -> server 名
         self._errors: dict[str, str] = {}  # 连接失败的 server -> 错误信息
@@ -55,7 +55,7 @@ class ToolRegistry:
         )
 
     async def _connect_one(self, name: str, config: MCPServerConfig) -> None:
-        client = MCPClient(config)
+        client = create_client(config)
         try:
             await client.connect()
             tools = await client.list_tools()

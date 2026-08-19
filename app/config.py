@@ -79,13 +79,15 @@ class MCPServerConfig(BaseModel):
     """单个 MCP Server 的声明式配置（在 config/gateway.yaml 的 servers 节声明）。"""
 
     name: str
-    transport: Literal["stdio", "sse", "http"] = "stdio"
+    transport: Literal["stdio", "sse", "http", "inprocess"] = "stdio"
     enabled: bool = True
     # stdio 传输
     command: str | None = None
     args: list[str] = []
     # sse / Streamable HTTP 传输
     url: str | None = None
+    # inprocess 传输："package.module:attr"（attr 缺省为 server），指向 MCPServer 实例
+    module: str | None = None
 
     @property
     def namespace(self) -> str:

@@ -17,16 +17,26 @@
     DEMO_SQL_PORT       http 模式端口（默认 9001）
     DEMO_SQL_DB_PATH    SQLite 路径（默认 data/demo_sql.db）
 
-注意：本文件按脚本方式运行（sys.path[0] 为本目录），故 db / nl2sql 用裸导入。
+注意：本文件同时支持两种加载方式：
+- 脚本方式运行（python servers/demo_sql_server/server.py，sys.path[0] 为本目录），
+  裸导入 db / nl2sql；
+- 包导入（网关 inprocess 传输在进程内 import servers.demo_sql_server.server），相对导入。
 """
 
 import os
+import sqlite3
+import tempfile
 from collections.abc import Iterable
 from typing import Any
 
-from db import execute_readonly, get_schema, init_db
 from mcp.server.mcpserver import MCPServer
-from nl2sql import SUPPORTED_EXAMPLES, question_to_sql
+
+try:  # 包导入（网关进程内加载）
+    from .db import execute_readonly, get_schema, init_db
+    from .nl2sql import SUPPORTED_EXAMPLES, question_to_sql
+except ImportError:  # 脚本方式运行（stdio 子进程 / docker）
+    from db import execute_readonly, get_schema, init_db
+    from nl2sql import SUPPORTED_EXAMPLES, question_to_sql
 
 DB_PATH = os.getenv("DEMO_SQL_DB_PATH", "data/demo_sql.db")
 
@@ -36,11 +46,20 @@ _db_ready = False
 
 
 def _ensure_db() -> None:
-    """首次调用时建库 + 种子（惰性初始化，避免 import 副作用）。"""
-    global _db_ready
-    if not _db_ready:
+    """首次调用时建库 + 种子（惰性初始化，避免 import 副作用）。
+
+    Serverless（如 Vercel /var/task）文件系统只读，默认相对路径不可写时
+    自动回退到系统临时目录（/tmp），保证进程内模式开箱即用。
+    """
+    global _db_ready, DB_PATH
+    if _db_ready:
+        return
+    try:
         init_db(DB_PATH)
-        _db_ready = True
+    except (OSError, sqlite3.OperationalError):
+        DB_PATH = os.path.join(tempfile.gettempdir(), "demo_sql.db")
+        init_db(DB_PATH)
+    _db_ready = True
 
 
 def _to_markdown_table(columns: Iterable[str], rows: Iterable[Iterable[Any]]) -> str:

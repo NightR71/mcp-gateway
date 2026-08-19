@@ -42,7 +42,7 @@ class ServerStatus(BaseModel):
     """单个 MCP Server 的连接状态（供阶段 3 的 /servers 接口使用）。"""
 
     name: str
-    transport: Literal["stdio", "sse", "http"]
+    transport: Literal["stdio", "sse", "http", "inprocess"]
     connected: bool
     tool_count: int = 0
     error: str | None = None

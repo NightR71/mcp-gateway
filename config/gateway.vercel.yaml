@@ -11,11 +11,11 @@ auth:
       name: demo
       rate_limit_per_minute: 60
 
-# demo server 仍走 stdio（同实例子进程）；
-# 其子进程 SQLite 路径由 Vercel 环境变量 DEMO_SQL_DB_PATH=/tmp/demo_sql.db 指定
-# 注意：Vercel 是 Linux 运行时，python 命令不一定存在，必须用 python3
+# demo server 走 inprocess：在网关进程内直接加载，不拉子进程。
+# 原因：Vercel Serverless 子进程的解释器看不到构建期安装的依赖（ModuleNotFoundError: mcp），
+# 进程内加载与网关共用同一份 site-packages，彻底消除解释器环境差异。
+# SQLite 优先取环境变量 DEMO_SQL_DB_PATH，缺省 data/demo_sql.db 不可写时自动回退 /tmp。
 servers:
   - name: demo_sql
-    transport: stdio
-    command: python3
-    args: ["servers/demo_sql_server/server.py"]
+    transport: inprocess
+    module: servers.demo_sql_server.server:server
