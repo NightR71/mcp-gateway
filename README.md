@@ -78,8 +78,7 @@ curl -X POST http://localhost:8000/tools/demo_sql__ask/call \
 uv run uvicorn app.main:app                                    # 先启动网关
 uv run python examples/openai_agent.py "有多少客户？" --mock    # 离线演示（假模型，无需 API Key）
 uv run python examples/openai_agent.py "总销售额是多少？"        # 真实 OpenAI function calling
-uv sync --group agent                                          # 可选：LangChain 版依赖
-uv run python examples/langchain_agent.py "有多少客户？"
+uv run --group agent python examples/langchain_agent.py "有多少客户？"  # LangChain 版（--group 临时装依赖）
 ```
 
 两个版本：`openai_agent.py`（纯 httpx 手写 function-calling 协议，`OPENAI_BASE_URL`
