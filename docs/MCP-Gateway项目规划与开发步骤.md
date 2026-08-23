@@ -162,7 +162,7 @@ mcp-gateway/
 - **验收**：面试官点链接能直接看到「Agent 调网关 → 网关调 SQL server」完整闭环（代码部分 2026-08-17 完成：`pytest` 59/59；docker compose 双容器全链路冒烟通过；剩公网部署与录屏）
 
 ### 阶段 5：Agent 示例 + 开源推广 + PR（W5–6）
-- [ ] `examples/`：写一个 LangChain / OpenAI function-calling 的 Agent 示例，通过网关调用工具
+- [x] `examples/`：写一个 LangChain / OpenAI function-calling 的 Agent 示例，通过网关调用工具 ✅（2026-08-23：OpenAI function-calling + LangChain 双版本，含离线 mock 演示与测试，见第 11 节）
 - [ ] README 补「企业级拓展路径」（见第 9 节）
 - [ ] 发到 知乎/掘金/v2ex/即刻，README 附博客链接
 - [ ] 向 MCP 生态提 1–2 个 PR（modelcontextprotocol/servers、Dify、LangChain 均可）
@@ -191,8 +191,8 @@ mcp-gateway/
 
 ## 11. 当前进度（每次开发后更新此节）
 
-- **状态**：阶段 4 代码部分已完成（metrics + NL2SQL + docker-compose），剩公网部署与演示录屏
-- **已完成阶段**：阶段 0（环境准备）、阶段 1（工程骨架 + CI）、阶段 2（协议层打通）、阶段 3（统一 API + 鉴权限流）、阶段 4 代码部分
+- **状态**：阶段 4 已完成（metrics + NL2SQL + docker-compose + Vercel 部署），剩演示录屏；阶段 5 第一点（Agent 调用示例）已完成，剩开源推广与 PR
+- **已完成阶段**：阶段 0（环境准备）、阶段 1（工程骨架 + CI）、阶段 2（协议层打通）、阶段 3（统一 API + 鉴权限流）、阶段 4、阶段 5 第一点（examples/ Agent 调用示例）
 - **仓库**：https://github.com/NightR71/MCP_Gateway_Demo.git（2026-08-20 起 origin 已更新为新名；原名 `MCP-Gateway-Demo` 301 跳转到新名；main 已跟踪 origin/main；阶段 2/3 提交 d43643d、f136de6 已推送）
 - **⚠️ 源码丢失与恢复事件（2026-08-17）**：上一会话的阶段 4 源码（db.py / nl2sql.py / server.py 升级版 / 3 个测试文件）神秘丢失，仅剩 `__pycache__` 中的 pyc；本会话已用 marshal 反编译 pyc 提取常量与签名，完整重建全部源码并通过测试。**教训：每个小步骤完成后立即提交 git**
 - **阶段 4 产出**：
@@ -214,8 +214,17 @@ mcp-gateway/
   - 根因：GitHub 仓库已改名（`MCP-Gateway-Demo` → `MCP_Gateway_Demo`，push 时提示 "This repository moved"），Vercel 的 Git 集成未跟随改名而失联，导致修复推送后不再自动构建生产部署；另发现 2026-08-18 误建的废弃仓库 `mcp_gateway_demo_nightr71`（仅 1 次 push，可删）。
   - 处理：① 本机 `git remote set-url origin https://github.com/NightR71/MCP_Gateway_Demo.git`；② 本机 git 仓库级配置 `http.sslbackend openssl` + `http.sslVerify false`（本机 schannel 报 `SEC_E_NO_CREDENTIALS`、openssl 系统 CA 缺签发者，push 需此配置；仅限本机，勿传播）；③ 曾用空提交 799963f 触发重建（集成未恢复前无效）；④ 用户在 Vercel Dashboard → Settings → Git 重新连接改名后的仓库并重新部署；⑤ demo-health 验收 **4 步全绿**（run 32381531079）：`/health` 200、无 Key 401、带 Key 恰好 4 个工具、ask 返回 `SELECT COUNT(*)` + `| 5 |`；`/servers` 实测 `{"transport":"inprocess","connected":true,"tool_count":4,"error":null}`，不再有 ModuleNotFoundError。
   - 环境备忘：本机 PATH 被 pyenv-win shim 抢占，stdio 子进程会解析到 pyenv 而非项目 .venv 的 python（stdout 出现 `pyenv local 3.7.4`、registry 报 "Connection closed"）——跑 pytest / uvicorn 必须 `uv run` 或 PATH 前置 `.venv\Scripts`；uv 缓存 `sdists-v9\.git` 偶发拒绝访问（os error 5）时，可直接 `.venv\Scripts\python.exe -m pytest`。
-- **下一步动作**：README 补 demo 链接（注明大陆访问限制）与演示录屏 → 进入阶段 5（examples/ Agent 调用示例、开源推广、向 MCP 生态提 PR）；建议删除废弃仓库 `mcp_gateway_demo_nightr71`
-- **最后更新时间**：2026-08-20
+- **阶段 5 产出（第一点：Agent 调用示例，2026-08-23）**：
+  - `examples/gateway_client.py`：网关 REST 极简异步客户端（`GET /tools`、`POST /tools/{name}/call` + `X-API-Key`），零网关内部依赖，只依赖 HTTP 契约；`tool_to_function_schema()`（ToolInfo → OpenAI function 描述，命名空间工具名天然满足 `^[a-zA-Z0-9_-]+$`）+ `extract_text()`（MCP content → 纯文本）
+  - `examples/openai_agent.py`：**OpenAI function-calling Agent（纯 httpx 手写协议，不依赖 openai SDK）**——通用 Agent 循环 `run_agent()`（LLM 决定工具调用 → 网关执行 → 结果回填 → 最终回答，最多 8 轮）+ `MockModel` 假模型 + `--mock` 离线演示（无 Key 跑通「鉴权 → 限流 → SQL」全链路）；`OPENAI_BASE_URL` 可指向 One-API/Ollama/DeepSeek 等兼容端点（模型无关，换模型零改动）
+  - `examples/langchain_agent.py`：**LangChain 版**——网关工具经 `create_model` 动态生成 args_schema 包装成 `StructuredTool`（async coroutine，执行仍走网关）+ `ChatOpenAI.bind_tools` + 同款往返循环；工具调用不走 LangChain ToolNode，鉴权限流审计全部收敛在网关
+  - 依赖：pyproject 新增可选组 `agent`（langchain-core>=0.3.20 + langchain-openai>=0.2.6 + httpx，`uv sync --group agent` 安装；实测解析到 langchain-core 1.6.0 / langchain-openai 1.6.0）；网关本体依赖不变
+  - `examples/README.md`：三种跑法（离线 mock / OpenAI / LangChain）+ 环境变量表 + 设计要点；README 新增「Agent 调用示例」节；`.gitignore` 补 `.uv-cache/`、`.tmp/`、`tmp_t/`
+  - 测试：`tests/test_examples/` 共 10 例——gateway_client 4 例（schema 命名规则 / 真实列工具+调用 / 401 / 429 三 case 覆盖）、openai_agent 4 例（假模型全链路 / 直接回答分支 / MockModel 两轮行为）、langchain_agent 2 例（工具动态包装 + 剧本假模型全链路并断言工具结果真实回填；`FakeListChatModel` 在 langchain-core 1.x 只收字符串，消息版改用 `FakeMessagesListChatModel`，另自写 `_RecordingScriptedModel` 按 tool 消息数播放剧本）
+  - **验证结果（2026-08-23）**：`ruff check` + `ruff format --check` 通过；`pytest` **73/73**（25.74s，新增 10 例全过）；真实 uvicorn 冒烟：`registry_ready connected=1 tools=4` → `python examples/openai_agent.py "有多少客户？" --mock` 输出 `SELECT COUNT(*) AS 客户总数` + `| 5 |`（脚本与 `-m` 模块双模式均验证）；无 Key 跑真实模型路径两个示例均给出可操作提示后退出
+  - ⚠️ 本机沙箱会话新增环境备忘：DSH 沙箱会拦截子进程管道 stdio（uv 拉解释器、pytest/uvicorn 拉 demo_sql 子进程均报 os error 5），需升级权限运行；uv 缓存 `sdists-v9\.git` 拒绝访问时改用 `UV_CACHE_DIR` 指向工作区临时目录
+- **下一步动作**：README 补 demo 链接（注明大陆访问限制）与演示录屏 → 阶段 5 剩余（开源推广：知乎/掘金/v2ex/即刻、向 MCP 生态提 PR）；建议删除废弃仓库 `mcp_gateway_demo_nightr71`
+- **最后更新时间**：2026-08-23
 - **Git 身份**：NightR71 / 1553364473@qq.com（已配置）
 - **认证**：PAT 已获取并完成认证（credential.helper store 已记住凭据）；`GITHUB_TOKEN` 已通过 setx 写入用户环境变量（重开终端生效）
 - **环境**：Python 3.12.11（uv 管理，`.python-version` 已固定 3.12）；uv 下载 GitHub Release 资源需 `UV_NATIVE_TLS=1`（本机证书问题）；Docker Desktop 已配置国内镜像加速器（registry-mirrors，写入 `~/.docker/daemon.json`）；**MCP SDK 实际安装为 2.0.0**（服务端用 `mcp.server.mcpserver.MCPServer`，无旧 fastmcp 模块；http 传输函数名为 `streamable_http_client`）；**本机 360 安全软件会拦截 pytest 拉起子进程（WinError 5）；2026-08-16 起 360 已关闭，测试可正常拉起子进程；若复现 WinError 5 先检查 360 是否又开启**

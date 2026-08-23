@@ -1,0 +1,92 @@
+# examples/ — LLM Agent 调用示例（阶段 5）
+
+> 演示「LLM Agent → MCP Gateway → MCP Server」完整闭环：Agent 不直连任何 MCP Server，
+> 只通过网关的统一 REST API（`GET /tools`、`POST /tools/{name}/call`）调用聚合工具，
+> 鉴权、限流、日志、指标全部由网关一层覆盖。
+
+## 文件
+
+| 文件 | 说明 | 依赖 |
+|---|---|---|
+| `gateway_client.py` | 网关 REST 极简异步客户端 + OpenAI function schema 转换 | httpx |
+| `openai_agent.py` | OpenAI function-calling Agent（纯 httpx 手写协议，不依赖 openai SDK，支持 `--mock` 离线演示） | httpx |
+| `langchain_agent.py` | LangChain Agent（网关工具包装成 LangChain Tools + `bind_tools`） | `uv sync --group agent` |
+
+## 前置准备
+
+```bash
+uv sync                        # 安装项目依赖
+uv run uvicorn app.main:app    # 终端 1：启动网关（启动时自动连上 demo_sql_server）
+```
+
+## 1. 离线演示（推荐先跑，不需要任何 API Key）
+
+```bash
+uv run python examples/openai_agent.py "有多少客户？" --mock
+```
+
+`--mock` 用内置假模型模拟 LLM 的 function-calling 决策，真实走
+「网关鉴权 → 令牌桶限流 → 路由到 demo_sql_server 执行 SQL」全链路：
+
+```
+网关：http://localhost:8000（已聚合 4 个工具）
+提问：有多少客户？
+模型：离线假模型（--mock）
+Agent 开始往返（LLM <-> 网关）...
+
+===== 最终回答 =====
+
+（离线演示·假模型）网关返回的工具结果：
+生成的 SQL：
+```sql
+SELECT COUNT(*) AS customer_count FROM customers
+```
+
+查询结果：
+| customer_count |
+| --- |
+| 5 |
+```
+
+## 2. 真实模型（OpenAI function calling）
+
+```powershell
+$env:OPENAI_API_KEY = "sk-..."   # PowerShell；bash 用 export OPENAI_API_KEY=sk-...
+uv run python examples/openai_agent.py "总销售额是多少？"
+```
+
+模型先决定调用 `demo_sql__ask`，网关执行 SQL 后把结果回填，模型再生成最终中文回答。
+`OPENAI_BASE_URL` 可指向任意 OpenAI 兼容端点（One-API / Ollama / DeepSeek 等），
+`OPENAI_MODEL` 指定模型名——换模型零代码改动。
+
+## 3. LangChain 版
+
+```bash
+uv sync --group agent           # 可选依赖组，仅示例需要；网关本体不依赖
+uv run python examples/langchain_agent.py "有多少客户？"
+```
+
+## 环境变量
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `GATEWAY_BASE_URL` | `http://localhost:8000` | 网关地址 |
+| `GATEWAY_API_KEY` | `dev-key-please-change` | 演示 Key（`config/gateway.yaml` 的 auth 节） |
+| `OPENAI_API_KEY` | 无 | LLM API Key（`--mock` 不需要） |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI 兼容端点 |
+| `OPENAI_MODEL` | `gpt-4o-mini` | 模型名 |
+
+## 设计要点
+
+- **工具名命名空间**：网关工具名统一 `{server}__{tool}`（如 `demo_sql__ask`），天然满足
+  OpenAI / LangChain 工具命名规则 `^[a-zA-Z0-9_-]+$`，Agent 侧无需二次改名
+  （见 `app/mcp/schemas.py` 中 `NAMESPACE_SEPARATOR` 的设计说明）。
+- **零网关内部依赖**：示例只依赖两个 REST 契约，任何语言 / 框架的 Agent
+  都能按同样方式接入网关。
+- **鉴权 / 限流透明**：所有调用带 `X-API-Key`；超限时网关返回 429（带 Retry-After），
+  重试策略由调用方决定。
+- **测试**：`tests/test_examples/` 用假模型 + ASGI 传输离线跑通全链路：
+
+  ```bash
+  uv run pytest tests/test_examples
+  ```
