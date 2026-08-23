@@ -69,6 +69,23 @@ curl -X POST http://localhost:8000/tools/demo_sql__ask/call \
 `list_tables`（表结构）、`echo`（链路调试）。NL2SQL 为规则模板引擎，
 离线零依赖，接口与 LLM 实现解耦，可平滑替换。
 
+## Agent 调用示例（examples/）
+
+演示「LLM Agent → 网关 → MCP Server」完整闭环，Agent 不直连任何 MCP Server，
+只通过网关统一 REST API 调用聚合工具：
+
+```bash
+uv run uvicorn app.main:app                                    # 先启动网关
+uv run python examples/openai_agent.py "有多少客户？" --mock    # 离线演示（假模型，无需 API Key）
+uv run python examples/openai_agent.py "总销售额是多少？"        # 真实 OpenAI function calling
+uv sync --group agent                                          # 可选：LangChain 版依赖
+uv run python examples/langchain_agent.py "有多少客户？"
+```
+
+两个版本：`openai_agent.py`（纯 httpx 手写 function-calling 协议，`OPENAI_BASE_URL`
+可指向 One-API / Ollama / DeepSeek 等兼容端点）、`langchain_agent.py`（网关工具
+动态包装成 LangChain Tools）。详见 `examples/README.md`。
+
 ## 配置
 
 `config/gateway.yaml`（优先级：代码默认值 < YAML < 环境变量 `GATEWAY_*`）：
@@ -111,8 +128,9 @@ tests/                    # 单元测试
 - [x] 阶段 1：工程骨架 + CI（/health、/metrics、配置中心、结构化日志）
 - [x] 阶段 2：协议层打通（stdio/SSE/HTTP 三传输客户端 + 工具注册中心 + demo server）
 - [x] 阶段 3：统一 API（GET /tools、POST /tools/{name}/call）+ API Key 鉴权 + 令牌桶限流
-- [x] 阶段 4：工具调用指标 + demo_sql_server 升级 NL2SQL + docker-compose 双容器（公网部署与演示录屏待补）
-- [ ] 阶段 5：Agent 调用示例 + 开源推广
+- [x] 阶段 4：工具调用指标 + demo_sql_server 升级 NL2SQL + docker-compose 双容器 + Vercel 公网部署（演示录屏待补）
+- [x] 阶段 5（部分）：Agent 调用示例（`examples/`：OpenAI function-calling + LangChain 双版本，含离线 mock 演示）
+- [ ] 阶段 5（剩余）：开源推广 + 向 MCP 生态提 PR
 
 ## 企业级拓展路径
 

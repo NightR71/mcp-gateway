@@ -24,6 +24,13 @@ dev = [
     "ruff>=0.6.0",
 ]
 
+# 可选依赖组：仅 examples/langchain_agent.py 需要（uv sync --group agent），网关本体不依赖
+agent = [
+    "httpx>=0.27.0",
+    "langchain-core>=0.3.20",
+    "langchain-openai>=0.2.6",
+]
+
 [tool.ruff]
 target-version = "py312"
 line-length = 100

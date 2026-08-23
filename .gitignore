@@ -16,6 +16,11 @@ env/
 .ruff_cache/
 .coverage
 htmlcov/
+# 本机 uv 缓存兜底目录（UV_CACHE_DIR 指向工作区时的临时产物）
+.uv-cache/
+# 本机测试临时目录（pytest 旧 basetemp 残留，ACL 异常）
+.tmp/
+tmp_t/
 
 # 环境与密钥
 .env
