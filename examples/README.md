@@ -59,6 +59,21 @@ uv run python examples/openai_agent.py "总销售额是多少？"
 `OPENAI_BASE_URL` 可指向任意 OpenAI 兼容端点（One-API / Ollama / DeepSeek 等），
 `OPENAI_MODEL` 指定模型名——换模型零代码改动。
 
+## 2.1 连公网部署（Vercel Demo，不用启动本地网关）
+
+示例是纯 HTTP 客户端，指向哪台网关由 `GATEWAY_BASE_URL` 决定：
+
+```powershell
+$env:GATEWAY_BASE_URL = "https://mcpgatewaydemo1.vercel.app"
+uv run python examples/openai_agent.py "有多少客户？" --mock
+# 或一次性：uv run python examples/openai_agent.py "有多少客户？" --mock --base-url https://...
+```
+
+Key（`dev-key-please-change`）与限流（60 次/分钟）和本地一致；首次请求是 Serverless
+冷启动，等 1–3 秒属正常。⚠️ `*.vercel.app` 在大陆被 DNS 污染（本机直连超时），
+海外网络/科学上网可用；国内观众建议绑自定义域名或换国内云服务器（`docker compose` 已验证），
+远程验收可用仓库的 `demo-health` GitHub Actions 工作流（海外 Runner 跑 4 步检查）。
+
 ## 3. LangChain 版
 
 ```bash
