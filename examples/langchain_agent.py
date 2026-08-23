@@ -5,10 +5,12 @@ langchain-openai）。工具执行仍直接走网关统一入口，不经过 Lan
 这正是网关的意义：鉴权、限流、日志、指标全部收敛在网关一层。
 
 依赖（可选组，网关本体不依赖）：
-    uv sync --group agent
+    uv run --group agent python examples/langchain_agent.py "有多少客户？"
+    注意：不带 --group 的 uv run 会把环境同步回默认组并裁掉 langchain，
+    所以不要拆成「先 uv sync --group agent 再 uv run」两步。
 
 用法：
-    uv run python examples/langchain_agent.py "有多少客户？"
+    uv run --group agent python examples/langchain_agent.py "有多少客户？"
 """
 
 from __future__ import annotations
@@ -93,7 +95,8 @@ def build_llm(model_name: str, api_key: str, base_url: str | None = None) -> Bas
         from langchain_openai import ChatOpenAI
     except ImportError as exc:
         raise RuntimeError(
-            "缺少 langchain-openai：请先执行 `uv sync --group agent`（仅示例需要，网关本体不依赖）"
+            "缺少 langchain-openai：请用 `uv run --group agent` 运行本示例"
+            "（仅示例需要，网关本体不依赖）"
         ) from exc
     kwargs: dict[str, Any] = {"model": model_name, "api_key": api_key, "temperature": 0}
     if base_url:
@@ -135,7 +138,18 @@ async def main() -> None:
         )
     async with httpx.AsyncClient(timeout=120.0) as http_client:
         gateway = GatewayClient(args.base_url, args.api_key, client=http_client)
-        tools_info = await gateway.list_tools()
+        try:
+            tools_info = await gateway.list_tools()
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            raise SystemExit(
+                f"连不上网关（{gateway.base_url}）：请先在另一个终端启动网关\n"
+                "    uv run uvicorn app.main:app\n"
+                f"原始错误：{exc}"
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            raise SystemExit(
+                f"网关返回错误（HTTP {exc.response.status_code}）：{exc.response.text}"
+            ) from exc
         tools = [tool_to_langchain_tool(t, gateway) for t in tools_info]
         model = build_llm(args.model, args.openai_api_key, args.openai_base_url).bind_tools(tools)
         print(f"网关：{gateway.base_url}（已聚合 {len(tools_info)} 个工具）")

@@ -223,7 +223,18 @@ async def main() -> None:
         )
     async with httpx.AsyncClient(timeout=120.0) as http_client:
         gateway = GatewayClient(args.base_url, args.api_key, client=http_client)
-        tools = await gateway.list_tools()
+        try:
+            tools = await gateway.list_tools()
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            raise SystemExit(
+                f"连不上网关（{gateway.base_url}）：请先在另一个终端启动网关\n"
+                "    uv run uvicorn app.main:app\n"
+                f"原始错误：{exc}"
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            raise SystemExit(
+                f"网关返回错误（HTTP {exc.response.status_code}）：{exc.response.text}"
+            ) from exc
         model = (
             MockModel()
             if args.mock

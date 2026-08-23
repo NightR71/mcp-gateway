@@ -62,9 +62,13 @@ uv run python examples/openai_agent.py "总销售额是多少？"
 ## 3. LangChain 版
 
 ```bash
-uv sync --group agent           # 可选依赖组，仅示例需要；网关本体不依赖
-uv run python examples/langchain_agent.py "有多少客户？"
+uv run --group agent python examples/langchain_agent.py "有多少客户？"
 ```
+
+`--group agent` 让 uv 临时把可选依赖组（langchain-core + langchain-openai）纳入运行环境
+（首次自动安装，网关本体依赖不变）。注意：**不要**用「先 `uv sync --group agent`
+再 `uv run python ...`」两步——不带 `--group` 的 `uv run` 会自动把环境重新同步回
+默认组并裁掉 langchain，导致第二步报缺依赖。
 
 ## 环境变量
 

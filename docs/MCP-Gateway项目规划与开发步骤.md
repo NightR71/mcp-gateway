@@ -221,8 +221,12 @@ mcp-gateway/
   - 依赖：pyproject 新增可选组 `agent`（langchain-core>=0.3.20 + langchain-openai>=0.2.6 + httpx，`uv sync --group agent` 安装；实测解析到 langchain-core 1.6.0 / langchain-openai 1.6.0）；网关本体依赖不变
   - `examples/README.md`：三种跑法（离线 mock / OpenAI / LangChain）+ 环境变量表 + 设计要点；README 新增「Agent 调用示例」节；`.gitignore` 补 `.uv-cache/`、`.tmp/`、`tmp_t/`
   - 测试：`tests/test_examples/` 共 10 例——gateway_client 4 例（schema 命名规则 / 真实列工具+调用 / 401 / 429 三 case 覆盖）、openai_agent 4 例（假模型全链路 / 直接回答分支 / MockModel 两轮行为）、langchain_agent 2 例（工具动态包装 + 剧本假模型全链路并断言工具结果真实回填；`FakeListChatModel` 在 langchain-core 1.x 只收字符串，消息版改用 `FakeMessagesListChatModel`，另自写 `_RecordingScriptedModel` 按 tool 消息数播放剧本）
-  - **验证结果（2026-08-23）**：`ruff check` + `ruff format --check` 通过；`pytest` **73/73**（25.74s，新增 10 例全过）；真实 uvicorn 冒烟：`registry_ready connected=1 tools=4` → `python examples/openai_agent.py "有多少客户？" --mock` 输出 `SELECT COUNT(*) AS 客户总数` + `| 5 |`（脚本与 `-m` 模块双模式均验证）；无 Key 跑真实模型路径两个示例均给出可操作提示后退出
+  - **验证结果（2026-08-23）**：`ruff check` + `ruff format --check` 通过；`pytest` **73/73**（25.74s，含 agent 组时 langchain 2 例也跑；plain `uv run` 默认环境下 langchain 2 例自动 skip → 71 passed + 1 skipped，CI 上同样跳过，属预期）；真实 uvicorn 冒烟：`registry_ready connected=1 tools=4` → `uv run python examples/openai_agent.py "有多少客户？" --mock` 输出 `SELECT COUNT(*) AS 客户总数` + `| 5 |`（脚本与 `-m` 模块双模式均验证）；无 Key 跑真实模型路径两个示例均给出可操作提示后退出
   - ⚠️ 本机沙箱会话新增环境备忘：DSH 沙箱会拦截子进程管道 stdio（uv 拉解释器、pytest/uvicorn 拉 demo_sql 子进程均报 os error 5），需升级权限运行；uv 缓存 `sdists-v9\.git` 拒绝访问时改用 `UV_CACHE_DIR` 指向工作区临时目录
+- **🐞 阶段 5 示例运行排障（2026-08-23）**：用户实测 `uv run python examples/openai_agent.py "有多少客户？" --mock` 报错，逐层排查修复：
+  1. **uv 系统缓存损坏**：`uv run` 因环境与 lock 不一致触发自动同步时，读取 `C:\Users\Night7\AppData\Local\uv\cache\sdists-v9\.git` 报 os error 5（该目录为历史损坏残留）——已重命名为 `.git-broken-bak`，`uv run` 恢复正常（注意：DSH 沙箱本身也禁止访问 AppData，沙箱内报同样文案属误报，需升级权限复验）
+  2. **网关未启动时示例抛原始 traceback**：两个示例 main() 已补友好报错——连不上网关时提示「请先启动网关：uv run uvicorn app.main:app」（含原始错误）；网关返回 4xx 时展示状态码与响应体
+  3. **uv run 会自动裁剪 agent 组**：实测带 `--group agent` 装过 langchain 后，下次不带 group 的 `uv run` 会把环境同步回默认组并**裁掉 langchain**——因此 LangChain 示例的正确跑法是 `uv run --group agent python examples/langchain_agent.py "..."`（一步到位），README / examples/README / 模块 docstring / 报错提示已全部统一为这种写法（原「先 uv sync --group agent 再 uv run」两步写法会导致第二步报缺依赖）
 - **下一步动作**：README 补 demo 链接（注明大陆访问限制）与演示录屏 → 阶段 5 剩余（开源推广：知乎/掘金/v2ex/即刻、向 MCP 生态提 PR）；建议删除废弃仓库 `mcp_gateway_demo_nightr71`
 - **最后更新时间**：2026-08-23
 - **Git 身份**：NightR71 / 1553364473@qq.com（已配置）
