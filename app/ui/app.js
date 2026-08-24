@@ -79,54 +79,113 @@ async function requestJson(url, options) {
   return resp.json();
 }
 
-function renderSteps(body) {
-  toolCount.textContent = `工具: ${body.tools_total}/${body.tools_total} · 注入: ${body.tools_injected}`;
-  roundInfo.textContent = `轮数: ${body.rounds}`;
-  roundInfo.classList.remove("hidden");
-  for (const step of body.steps || []) {
-    if (step.kind === "tool_call" && !step.is_error) {
-      // 工具调用与结果分两条：Agent 决定调用（Gateway 鉴权/限流/执行）
-      addStep("gateway", `鉴权 ✓ 限流 ✓ 执行 ${step.tool}`, {
-        tool: step.tool,
-        latencyMs: step.latency_ms,
-      });
-    } else if (step.kind === "tool_result") {
-      const card = addStep("tool-result", `工具 ${step.tool} 返回：`, {
-        tool: step.tool,
-        latencyMs: step.latency_ms,
-        isError: step.is_error,
-      });
-      const results = document.createElement("div");
-      results.className = "tool-results";
-      results.textContent = step.content;
-      card.appendChild(results);
-    } else {
-      addStep(step.kind, step.content, {
-        isError: step.is_error,
-        latencyMs: step.latency_ms,
-      });
-    }
-  }
-}
-
 async function runAgent(question) {
   sendBtn.disabled = true;
   addStep("user", question);
   const placeholder = addStep("agent", "正在选择工具并调用网关...");
   try {
-    const body = await requestJson("/agent/run", {
-      method: "POST",
-      headers: headers(),
-      body: JSON.stringify({ question }),
-    });
-    placeholder.remove();
-    renderSteps(body);
+    await runAgentStream(question, placeholder);
   } catch (err) {
     placeholder.remove();
     addStep("final", String(err.message || err), { isError: true });
   } finally {
     sendBtn.disabled = false;
   }
+}
+
+/* 阶段 4：POST /agent/run/stream 逐帧读取 SSE（\n\n 分帧），
+ * token 逐字追加，step 实时插入时间线卡片。 */
+async function runAgentStream(question, placeholder) {
+  const resp = await fetch("/agent/run/stream", {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ question }),
+  });
+  if (resp.status === 401 || resp.status === 429 || resp.status === 503) {
+    const body = await resp.json().catch(() => ({}));
+    throw new Error(`HTTP ${resp.status}：${body.detail || resp.statusText}`);
+  }
+  if (!resp.ok || !resp.body) {
+    throw new Error(`HTTP ${resp.status}：无法建立流式连接`);
+  }
+  placeholder.remove();
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalEl = null;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let sep;
+    while ((sep = buffer.indexOf("\n\n")) >= 0) {
+      const frame = buffer.slice(0, sep);
+      buffer = buffer.slice(sep + 2);
+      finalEl = handleFrame(frame, finalEl) || finalEl;
+    }
+  }
+}
+
+/* 解析单个 SSE 帧（event: xxx\ndata: {...}），返回 final 步骤的元素（供 token 追加）。 */
+function handleFrame(frame, finalEl) {
+  let eventName = null;
+  const dataLines = [];
+  for (const line of frame.split("\n")) {
+    if (line.startsWith("event: ")) eventName = line.slice(7).trim();
+    else if (line.startsWith("data: ")) dataLines.push(line.slice(6));
+  }
+  if (!eventName || dataLines.length === 0) return null;
+  const payload = JSON.parse(dataLines.join("\n"));
+  if (eventName === "step") {
+    return renderStreamStep(payload.step, finalEl);
+  }
+  if (eventName === "token" && payload.text) {
+    if (!finalEl) finalEl = addStep("final", "");
+    const body = finalEl.querySelector(".body");
+    body.textContent += payload.text;
+    finalEl.scrollIntoView({ block: "nearest" });
+    return finalEl;
+  }
+  if (eventName === "done" && payload.response) {
+    const resp = payload.response;
+    toolCount.textContent = `工具: ${resp.tools_total}/${resp.tools_total} · 注入: ${resp.tools_injected}`;
+    roundInfo.textContent = `轮数: ${resp.rounds}`;
+    roundInfo.classList.remove("hidden");
+  }
+  return null;
+}
+
+/* 流式 step 事件：复用渲染逻辑；token 前的 final step 卡作为逐字追加容器。 */
+function renderStreamStep(step, finalEl) {
+  if (step.kind === "tool_call" && !step.is_error) {
+    return addStep("gateway", `鉴权 ✓ 限流 ✓ 执行 ${step.tool}`, {
+      tool: step.tool,
+      latencyMs: step.latency_ms,
+    });
+  }
+  if (step.kind === "tool_result") {
+    const card = addStep("tool-result", `工具 ${step.tool} 返回：`, {
+      tool: step.tool,
+      latencyMs: step.latency_ms,
+      isError: step.is_error,
+    });
+    const results = document.createElement("div");
+    results.className = "tool-results";
+    results.textContent = step.content;
+    card.appendChild(results);
+    return null;
+  }
+  if (step.kind === "final") {
+    if (finalEl) return finalEl;
+    return addStep("final", step.content || "", {
+      isError: step.is_error,
+      latencyMs: step.latency_ms,
+    });
+  }
+  return addStep(step.kind, step.content, {
+    isError: step.is_error,
+    latencyMs: step.latency_ms,
+  });
 }
 
 async function healthCheck() {

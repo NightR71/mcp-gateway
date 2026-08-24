@@ -121,3 +121,32 @@ async def test_list_tools_query_disabled_returns_all(
     resp = await gateway_client.get("/tools", headers=AUTH_HEADERS, params={"query": "销售额"})
     assert resp.status_code == 200
     assert len(resp.json()) == 4
+
+
+# ---------- 阶段 4：SSE 流式工具调用（/tools/{name}/call/stream） ----------
+
+
+async def test_call_tool_stream_ok(gateway_client: AsyncClient) -> None:
+    """流式工具调用：start → result → done；同步端点行为不变。"""
+    async with gateway_client.stream(
+        "POST",
+        "/tools/demo_sql__echo/call/stream",
+        headers=AUTH_HEADERS,
+        json={"arguments": {"message": "hello"}},
+    ) as resp:
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")
+        body = ""
+        async for chunk in resp.aiter_text():
+            body += chunk
+
+    frames = [f for f in body.split("\n\n") if f.strip()]
+    names = [f.split("\n")[0].replace("event: ", "") for f in frames]
+    assert names == ["start", "result", "done"]
+    assert "echo: hello" in body
+
+
+async def test_call_tool_stream_unauthorized(gateway_client: AsyncClient) -> None:
+    """无 Key 调 call/stream 仍 401（鉴权语义与同步端点一致）。"""
+    resp = await gateway_client.post("/tools/demo_sql__echo/call/stream", json={})
+    assert resp.status_code == 401

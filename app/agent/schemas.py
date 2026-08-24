@@ -36,3 +36,17 @@ class AgentResponse(BaseModel):
     tools_injected: int = 0
     rounds: int = 0
     extra: dict[str, Any] = Field(default_factory=dict, description="预留扩展位")
+
+
+class AgentEvent(BaseModel):
+    """流式事件（阶段 4，POST /agent/run/stream 的 SSE 负载）：
+
+    - type=step：AgentStep 增量（工具选择/调用/结果/最终回答标记）
+    - type=token：最终回答的文本增量（逐字输出）
+    - type=done：完整 AgentResponse（steps 汇总 + 工具统计）
+    """
+
+    type: Literal["step", "token", "done"]
+    step: AgentStep | None = None
+    text: str | None = Field(default=None, description="token 事件：文本增量")
+    response: AgentResponse | None = Field(default=None, description="done 事件：完整响应")

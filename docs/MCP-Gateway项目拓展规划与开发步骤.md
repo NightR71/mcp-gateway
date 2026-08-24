@@ -404,20 +404,20 @@ Interactive UI（/ui 工作台，链路时间线可视化）
 
 步骤：
 
-* [ ] **完成 Agent Model 的流式能力**
+* [x] **完成 Agent Model 的流式能力**
 
   * `app/agent/models.py`：`Model` 增加可选 `chat_stream(messages, tools) -> AsyncIterator[dict]`。
   * `build_openai_model` 使用 `httpx stream=True` + `stream: true` 解析 SSE。
-  * `MockModel` 实现假 token 流。
+  * `MockModel` 实现假 token 流（逐字 yield + 完整 message）。
 
-* [ ] **完成 AgentRunner 的流式执行**
+* [x] **完成 AgentRunner 的流式执行**
 
   * `app/agent/runner.py`：新增 `run_stream(question) -> AsyncIterator[AgentEvent]`。
-  * 复用 `run()` 的工具选择 / 工具执行 / 结果回填核心逻辑。
+  * 复用 `run()` 的工具选择 / 工具执行 / 结果回填核心逻辑（抽出 `_prepare` / `_execute_tool_calls` 共享）。
   * 文本通过 `chat_stream` 透传。
   * 工具执行前后产生 step 事件。
 
-* [ ] **完成 `/agent/run/stream` SSE API**
+* [x] **完成 `/agent/run/stream` SSE API**
 
   * `POST /agent/run/stream` → `StreamingResponse(media_type="text/event-stream")`。
   * 事件格式：
@@ -427,14 +427,14 @@ Interactive UI（/ui 工作台，链路时间线可视化）
     * `event: done`
   * 鉴权与限流规则与同步端点一致。
 
-* [ ] **完成 `/tools/{name}/call/stream` SSE API**
+* [x] **完成 `/tools/{name}/call/stream` SSE API**
 
   * `POST /tools/{tool_name}/call/stream` → SSE。
   * 事件顺序：`start` → `result` → `done`。
-  * 内部仍调用 `registry.call_tool()`。
+  * 内部仍调用 `registry.call_tool()`；未知工具在流开始前校验保持 404。
   * **同步 `/tools/{name}/call` 一字不改。**
 
-* [ ] **完成 Agent Workbench 的流式渲染**
+* [x] **完成 Agent Workbench 的流式渲染**
 
   * `app/ui/app.js` 改用 `/agent/run/stream`。
   * `fetch` 流式读取 `response.body`，按 `\n\n` 分帧。
@@ -442,7 +442,7 @@ Interactive UI（/ui 工作台，链路时间线可视化）
   * step 实时插入时间线卡片。
   * 失败时保留同步端点提示。
 
-* [ ] **完成 Agent 与 Tool Streaming 测试**
+* [x] **完成 Agent 与 Tool Streaming 测试**
 
   * `tests/test_agent/test_stream.py` 至少覆盖：
 
@@ -451,14 +451,15 @@ Interactive UI（/ui 工作台，链路时间线可视化）
     * MockModel 全链路流式；
     * `/tools/{name}/call/stream` 事件序列；
     * 无 Key 401。
-  * `tests/test_api/test_tools.py` 补 call/stream 兼容断言。
+  * `tests/test_api/test_tools.py` 补 call/stream 兼容断言（start/result/done + 401）。
 
-* [ ] **完成 Streaming 本地与兼容性验收**
+* [x] **完成 Streaming 本地与兼容性验收**
 
   * `curl -N` `/agent/run/stream` 能观察到事件流。
   * 浏览器 `/ui` 能逐字输出。
   * 同步 `/agent/run`、`/tools/{name}/call` 响应不变。
   * examples 不受影响。
+  * （本沙箱以 HTTP 实测事件序列替代 curl -N：`/agent/run/stream` 返回 `text/event-stream` 且事件序列 `step×4 → token×N → step(final) → done`；`/tools/{name}/call/stream` 为 `start → result → done`；同步端点行为不变。）
 
 验收：
 
@@ -776,20 +777,20 @@ Interactive UI（/ui 工作台，链路时间线可视化）
 
 ## 16. 当前状态（当前进度）
 
-- **当前阶段**：二阶段**阶段 3（Interactive Agent Workbench）已完成**；基线 = 一阶段开发 + 二阶段阶段 0/1/2/3。
-- **已完成阶段**：一阶段 阶段 0–4 + 5 第一点；二阶段 阶段 0（基线）、1（Semantic Tool Routing）、2（Agent 核心化）、3（Agent Workbench UI）。
-- **正在进行**：无（阶段 4 待开始）。
-- **已完成任务（二阶段）**：阶段 0 三项；阶段 1 六项；阶段 2 六项；阶段 3 四项（`app/ui/` 三件套、FastAPI 挂载 + 根路径重定向、README/测试 4 例、运行验收）。
-- **测试数量**：104 例（72 基线 + 32 新增）；沙箱升级权限复验 102 通过 / 1 环境性失败 / 1 跳过。
-- **最新验证结果**（2026-08-24，本沙箱）：`ruff check` + `ruff format --check` 全过（67 文件）；`pytest` 102 通过，唯一失败 `tests/test_mcp/test_http_transport.py`（沙箱 TCP 拦截，纯环境性）；运行验收（默认配置，mock agent 已默认启用）：`/` 307→`/ui`、`/ui` 200 含 `<html`、`/ui/app.js` 200、`/docs` 200、`/tools` 4 个、`POST /agent/run` 200（rounds=2、injected 1/4、销售额查询返回 20289.0）。
-- **已知问题**：SSE 传输无测试；Key 明文存储；限流单进程、桶无淘汰；无重连/总超时；无流式——**由二阶段阶段 4、7 覆盖**（「无工具路由」「Agent 不在网关内」「无交互 UI」已被阶段 1/2/3 解决）。
+- **当前阶段**：二阶段**阶段 4（Streaming）已完成**——核心闭环（阶段 1–4）全部完成；基线 = 一阶段开发 + 二阶段阶段 0/1/2/3/4。
+- **已完成阶段**：一阶段 阶段 0–4 + 5 第一点；二阶段 阶段 0（基线）、1（Semantic Tool Routing）、2（Agent 核心化）、3（Agent Workbench UI）、4（Streaming）。
+- **正在进行**：无（阶段 5 待开始）。
+- **已完成任务（二阶段）**：阶段 0 三项；阶段 1 六项；阶段 2 六项；阶段 3 四项；阶段 4 七项（Model 流式、runner.run_stream、`/agent/run/stream`、`/tools/{name}/call/stream`、UI 流式渲染、流式测试 10 例、本地与兼容性验收）。
+- **测试数量**：114 例（72 基线 + 42 新增）；沙箱升级权限复验 112 通过 / 1 环境性失败 / 1 跳过。
+- **最新验证结果**（2026-08-24，本沙箱）：`ruff check` + `ruff format --check` 全过（68 文件）；`pytest` 112 通过，唯一失败 `tests/test_mcp/test_http_transport.py`（沙箱 TCP 拦截，纯环境性）；运行验收：`/agent/run/stream` 返回 `text/event-stream`、事件序列 `step×4 → token×N → step(final) → done`，`/tools/{name}/call/stream` 为 `start → result → done`，同步 `/agent/run`、`/tools` 行为不变。
+- **已知问题**：SSE 传输无测试（阶段 7 补）；Key 明文存储；限流单进程、桶无淘汰；无重连/总超时（阶段 7）；NL2SQL 纯规则（阶段 5）；无多租户/白名单（阶段 6）。
 - **环境问题**：DSH 沙箱（子进程/写限制 + 受限 python 进程 TCP 连接被拦截返回 502，升级权限复验可排除除 http 传输测试外的全部）；uv 缓存损坏用 `UV_CACHE_DIR` 绕开；pyenv PATH 抢占（启动网关须 PATH 前置 `.venv\Scripts`）；本机 git ssl 配置；360 拦截子进程（见第 13 节）。
-- **下一步**：执行阶段 4（Streaming）：Model 流式能力（`chat_stream` + SSE 解析）、`AgentRunner.run_stream`、`POST /agent/run/stream` 与 `POST /tools/{name}/call/stream` 两个 SSE 端点、`app/ui/app.js` 切流式渲染、`tests/test_agent/test_stream.py` + 工具流式测试。
+- **下一步**：执行阶段 5（NL2SQL 双引擎，独立）：`servers/demo_sql_server/llm_translator.py`（OpenAI 兼容 chat/completions 生成 SQL，任何异常返回 None 规则兜底）+ `nl2sql.py` Translator Protocol 与 `create_translator(mode)` 工厂（rule/llm/hybrid）+ `ask` 工具双引擎标注 + 测试（`tests/test_servers/test_llm_translator.py` + `test_nl2sql.py` 补充）。
 - **最后更新时间**：2026-08-24。
 
 ## 17. 下一步建议
 
 1. 新对话直接用第 0 节开场提示词开始。
-2. 第一个执行任务：阶段 4 任务 1（`app/agent/models.py` 增加 `chat_stream` 流式能力：httpx `stream=True` + SSE 解析，`MockModel` 假 token 流），随后 runner 的 `run_stream` 与两个 SSE 端点。
+2. 第一个执行任务：阶段 5 任务 1（新建 `servers/demo_sql_server/llm_translator.py`：OpenAI 兼容 `chat/completions` 生成 SQL，system prompt 固定只读 SELECT 约束，任何异常/超时/空响应返回 None），随后 `nl2sql.py` 的 Translator Protocol 与 `create_translator()` 工厂（rule/llm/hybrid）。
 3. 每个对话结束前必须：更新第 16 节 + git commit + 明确写出「下一步」。
 4. 遇到与本文档矛盾的事实，以代码为准，并把矛盾记录进第 16 节「已知问题」。
