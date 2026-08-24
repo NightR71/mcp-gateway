@@ -235,6 +235,11 @@ async def main() -> None:
             raise SystemExit(
                 f"网关返回错误（HTTP {exc.response.status_code}）：{exc.response.text}"
             ) from exc
+        # 阶段 1：工具多时按问题语义路由，只注入 top-k，避免 context 膨胀
+        total_tools = len(tools)
+        if total_tools > 10:
+            tools = await gateway.list_tools(query=args.question, top_k=10)
+            print(f"共 {total_tools} 个工具，注入 top-K（按语义路由）：{len(tools)} 个")
         model = (
             MockModel()
             if args.mock
@@ -242,7 +247,7 @@ async def main() -> None:
                 args.openai_base_url, args.openai_api_key, args.model, http_client
             )
         )
-        print(f"网关：{gateway.base_url}（已聚合 {len(tools)} 个工具）")
+        print(f"网关：{gateway.base_url}（已聚合 {total_tools} 个工具）")
         print(f"提问：{args.question}")
         print(
             "模型：离线假模型（--mock）"

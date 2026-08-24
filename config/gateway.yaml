@@ -18,6 +18,17 @@ auth:
       name: demo
       rate_limit_per_minute: 60
 
+# 语义工具路由配置（阶段 1：GET /tools?query= 按关键词过滤 + top-k 注入）
+# enabled：是否启用 query 过滤（false 时 /tools?query= 与无参行为一致）
+# top_k：命中后返回的候选工具数上限
+# min_tools：工具总数不超过该值时不做过滤，原样返回全部（小工具集零过滤）。
+#           演示库当前仅 4 个工具，设为 3 使 ?query= 过滤在演示中可见；
+#           接入更多工具后可改回 10。
+routing:
+  enabled: true
+  top_k: 10
+  min_tools: 3
+
 # MCP Server 声明列表（YAML 声明、无需改代码）
 # 示例：
 #   - name: remote_api

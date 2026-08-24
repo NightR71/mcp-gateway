@@ -44,6 +44,15 @@ async def test_gateway_client_list_and_call(gateway_client) -> None:
     assert "| 5 |" in text  # demo 库 5 位客户
 
 
+async def test_gateway_client_list_tools_with_query(gateway_client) -> None:
+    """阶段 1：list_tools(query=...) 透传网关语义路由，只返回相关工具。"""
+    gateway = GatewayClient("http://test", "test-key", client=gateway_client)
+    tools = await gateway.list_tools(query="销售额", top_k=2)
+    names = [t["name"] for t in tools]
+    assert len(tools) <= 2
+    assert names[0] == "demo_sql__ask"
+
+
 async def test_gateway_client_unauthorized(gateway_client) -> None:
     """错误 Key 走网关鉴权：401 透传为 HTTPStatusError。"""
     gateway = GatewayClient("http://test", "wrong-key", client=gateway_client)

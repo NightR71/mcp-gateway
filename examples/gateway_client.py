@@ -79,9 +79,22 @@ class GatewayClient:
     def _headers(self) -> dict[str, str]:
         return {"X-API-Key": self.api_key}
 
-    async def list_tools(self) -> list[dict[str, Any]]:
-        """列出网关聚合的全部工具（ToolInfo 列表的字典形式）。"""
-        resp = await self._client.get(f"{self.base_url}/tools", headers=self._headers())
+    async def list_tools(
+        self, query: str | None = None, top_k: int | None = None
+    ) -> list[dict[str, Any]]:
+        """列出网关聚合的工具（ToolInfo 列表的字典形式）。
+
+        query 缺省时全量返回（与一阶段行为一致）；传 query 时网关按关键词
+        语义过滤（阶段 1 Semantic Tool Routing），top_k 控制返回数量上限。
+        """
+        params: dict[str, Any] = {}
+        if query is not None:
+            params["query"] = query
+        if top_k is not None:
+            params["top_k"] = top_k
+        resp = await self._client.get(
+            f"{self.base_url}/tools", headers=self._headers(), params=params
+        )
         resp.raise_for_status()
         return resp.json()
 
