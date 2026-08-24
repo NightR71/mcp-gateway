@@ -6,12 +6,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.routes import health, servers, tools
-from app.config import get_auth_config, get_server_configs, get_settings
+from app.config import get_auth_config, get_router_config, get_server_configs, get_settings
 from app.core.logging import configure_logging, get_logger
 from app.core.metrics import setup_metrics
 from app.core.rate_limit import RateLimiter
 from app.core.security import SQLiteAPIKeyStore
 from app.mcp.registry import ToolRegistry
+from app.mcp.tool_router import ToolRouter
 
 settings = get_settings()
 configure_logging(settings.log_level)
@@ -26,6 +27,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     registry = ToolRegistry(get_server_configs(), tool_call_timeout=settings.tool_call_timeout)
     await registry.connect_all()
     app.state.registry = registry
+
+    # 语义工具路由（阶段 1：GET /tools?query= 关键词过滤 + top-k）
+    router_config = get_router_config()
+    app.state.router = ToolRouter(top_k=router_config.top_k, min_tools=router_config.min_tools)
 
     # 横切层：API Key 存储（建表 + 种子）与令牌桶限流器
     auth_config = get_auth_config()

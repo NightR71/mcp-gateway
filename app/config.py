@@ -119,3 +119,17 @@ class AuthConfig(BaseModel):
 def get_auth_config() -> AuthConfig:
     """获取鉴权配置（进程级缓存）。"""
     return AuthConfig(**_load_yaml(_config_file()).get("auth", {}))
+
+
+class ToolRouterConfig(BaseModel):
+    """语义工具路由配置（config/gateway.yaml 的 routing 节，阶段 1）。"""
+
+    enabled: bool = True
+    top_k: int = 10  # 命中后返回的候选工具数上限
+    min_tools: int = 10  # 工具总数不超过该值时不做过滤（小工具集零过滤）
+
+
+@lru_cache
+def get_router_config() -> ToolRouterConfig:
+    """获取工具路由配置（进程级缓存），缺省用默认值。"""
+    return ToolRouterConfig(**_load_yaml(_config_file()).get("routing", {}))

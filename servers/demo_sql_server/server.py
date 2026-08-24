@@ -85,6 +85,7 @@ async def ask(question: str) -> str:
     """用中文自然语言提问，自动生成并执行 SQL 返回结果。
 
     演示电商库含 customers / products / orders 三表；
+    支持销售额、客户数、订单量、库存等业务查询（如「销售额最高的商品」）；
     未命中规则时会返回支持的问题示例列表。
     """
     _ensure_db()

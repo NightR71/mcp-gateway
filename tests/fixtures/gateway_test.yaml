@@ -1,9 +1,15 @@
 # 测试专用配置：conftest 的 gateway_client fixture 通过 GATEWAY_CONFIG_FILE 指向本文件
 # - SQLite 用 ":memory:"，不产生文件、测试间天然隔离
 # - 两个测试 Key：test-key 正常配额；limited-key 极低配额（专测 429）
+# - routing.min_tools: 2 —— 4 个工具 > 2，query 过滤生效（专测阶段 1 语义路由）
 gateway:
   app_name: mcp-gateway-test
   log_level: WARNING
+
+routing:
+  enabled: true
+  top_k: 10
+  min_tools: 2
 
 auth:
   db_path: ":memory:"

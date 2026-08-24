@@ -82,3 +82,42 @@ async def test_rate_limit_exceeded(gateway_client: AsyncClient) -> None:
 
     # 正常额度的 test-key 不受 limited-key 限流影响
     assert (await gateway_client.get("/tools", headers=AUTH_HEADERS)).status_code == 200
+
+
+# ---------- 阶段 1：语义工具路由（GET /tools?query=&top_k=） ----------
+
+
+async def test_list_tools_query_returns_sales_tool_first(gateway_client: AsyncClient) -> None:
+    """`GET /tools?query=销售额&top_k=2`：过滤生效、demo_sql__ask 排前、top_k 截断。
+
+    tests/fixtures/gateway_test.yaml 的 routing.min_tools=2（< 4 个工具），过滤生效。
+    """
+    resp = await gateway_client.get(
+        "/tools", headers=AUTH_HEADERS, params={"query": "销售额", "top_k": 2}
+    )
+    assert resp.status_code == 200
+    tools = resp.json()
+    names = [t["name"] for t in tools]
+    assert len(tools) <= 2
+    assert len(tools) < 4  # 确实发生了过滤（不是全量返回）
+    assert names[0] == "demo_sql__ask"
+    assert "demo_sql__ask" in names
+
+
+async def test_list_tools_no_query_returns_all(gateway_client: AsyncClient) -> None:
+    """不带 query 时行为与一阶段一致：全量返回 4 个工具。"""
+    resp = await gateway_client.get("/tools", headers=AUTH_HEADERS)
+    assert resp.status_code == 200
+    assert len(resp.json()) == 4
+
+
+async def test_list_tools_query_disabled_returns_all(
+    gateway_client: AsyncClient, monkeypatch
+) -> None:
+    """routing.enabled=false 时 query 参数不生效，仍全量返回（兼容旧行为）。"""
+    import app.api.routes.tools as tools_route
+
+    monkeypatch.setattr(tools_route, "router_enabled", lambda: False)
+    resp = await gateway_client.get("/tools", headers=AUTH_HEADERS, params={"query": "销售额"})
+    assert resp.status_code == 200
+    assert len(resp.json()) == 4

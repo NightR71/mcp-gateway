@@ -4,11 +4,12 @@ from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Request
 
-from app.config import Settings, get_settings
+from app.config import Settings, get_router_config, get_settings
 from app.core.logging import get_logger
 from app.core.rate_limit import RateLimiter
 from app.core.security import APIKeyStore
 from app.mcp.registry import ToolRegistry
+from app.mcp.tool_router import ToolRouter
 from app.schemas.auth import APIKeyInfo
 
 logger = get_logger(__name__)
@@ -22,6 +23,31 @@ def get_registry(request: Request) -> ToolRegistry:
 
 
 RegistryDep = Annotated[ToolRegistry, Depends(get_registry)]
+
+
+_default_router: ToolRouter | None = None
+
+
+def get_router(request: Request) -> ToolRouter:
+    """从 app.state 拿语义工具路由（lifespan 启动时已就绪）。
+
+    未挂载（未跑 lifespan 的测试/独立使用场景）时退回默认实例，保证零配置可用。
+    """
+    router = getattr(request.app.state, "router", None)
+    if router is not None:
+        return router  # type: ignore[no-any-return]
+    global _default_router
+    if _default_router is None:
+        _default_router = ToolRouter()
+    return _default_router
+
+
+RouterDep = Annotated[ToolRouter, Depends(get_router)]
+
+
+def router_enabled() -> bool:
+    """语义路由是否启用（YAML routing.enabled，进程级缓存）。"""
+    return get_router_config().enabled
 
 
 def get_key_store(request: Request) -> APIKeyStore:
