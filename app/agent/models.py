@@ -20,6 +20,15 @@ class Model(Protocol):
 
     async def chat(self, messages: list[Message], tools: list[dict[str, Any]]) -> Message: ...
 
+    async def chat_stream(self, messages: list[Message], tools: list[dict[str, Any]]) -> Any:
+        """（可选）流式一轮 chat，yield 事件 dict：
+
+        - {"type": "delta", "content": str} —— 文本增量
+        - {"type": "message", "message": Message} —— 本轮完整 assistant message
+          （message 可能含 tool_calls；流式文本已并入 message.content）
+        """
+        raise NotImplementedError
+
 
 def build_openai_model(
     base_url: str,
@@ -56,6 +65,65 @@ def build_openai_model(
             )
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]
+
+        async def chat_stream(self, messages: list[Message], tools: list[dict[str, Any]]) -> Any:
+            """OpenAI SSE 流式：yield delta 文本增量，最后 yield 完整 message。
+
+            tool_calls 增量按 index 累积（部分端点把参数拆成多段）。
+            """
+            async with self._client.stream(
+                "POST",
+                url,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model_name,
+                    "messages": messages,
+                    "tools": tools,
+                    "temperature": 0,
+                    "stream": True,
+                },
+            ) as resp:
+                resp.raise_for_status()
+                content_parts: list[str] = []
+                tool_calls: dict[int, dict[str, Any]] = {}
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        break
+                    chunk = json.loads(data)
+                    delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
+                    if delta.get("content"):
+                        content_parts.append(delta["content"])
+                        yield {"type": "delta", "content": delta["content"]}
+                    for call in delta.get("tool_calls") or []:
+                        index = int(call.get("index", 0))
+                        slot = tool_calls.setdefault(
+                            index, {"id": "", "function": {"name": "", "arguments": ""}}
+                        )
+                        slot["id"] = slot["id"] or call.get("id", "")
+                        function = call.get("function") or {}
+                        slot["function"]["name"] = slot["function"]["name"] or function.get(
+                            "name", ""
+                        )
+                        slot["function"]["arguments"] += function.get("arguments", "")
+                message: Message = {"role": "assistant"}
+                if tool_calls:
+                    message["tool_calls"] = [
+                        {
+                            "id": slot["id"],
+                            "type": "function",
+                            "function": slot["function"],
+                        }
+                        for slot in tool_calls.values()
+                    ]
+                if content_parts:
+                    message["content"] = "".join(content_parts)
+                yield {"type": "message", "message": message}
 
         async def aclose(self) -> None:
             if self._owns_client:
@@ -137,3 +205,16 @@ class MockModel:
                 }
             ],
         }
+
+    async def chat_stream(self, messages: list[Message], tools: list[dict[str, Any]]) -> Any:
+        """假模型流式：文本按「字」切块逐个 yield，最后 yield 完整 message。
+
+        与 chat() 决策一致（工具选择轮只 yield message 事件，无文本增量）。
+        """
+        message = await self.chat(messages, tools)
+        if not message.get("tool_calls"):
+            content = str(message.get("content") or "")
+            for char in content:
+                yield {"type": "delta", "content": char}
+            message["content"] = content
+        yield {"type": "message", "message": message}
