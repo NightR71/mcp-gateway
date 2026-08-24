@@ -50,6 +50,7 @@ docker compose up --build                 # 一键启动
 
 启动后访问：
 
+- `GET /` 或 `GET /ui` — **MCP Agent Workbench**（浏览器工作台：输入问题 → 时间线展示 工具选择 → 网关执行 → 结果回填 → 最终回答；默认 mock 模式开箱即用）
 - `GET /health` — 健康检查
 - `GET /metrics` — Prometheus 指标（含工具调用次数/耗时：`mcp_gateway_tool_calls_total`、`mcp_gateway_tool_call_duration_seconds`）
 - `GET /docs` — OpenAPI 交互文档

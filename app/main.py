@@ -3,8 +3,11 @@
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.agent.models import MockModel, build_openai_model
 from app.agent.runner import AgentRunner
@@ -97,6 +100,21 @@ def create_app() -> FastAPI:
     app.include_router(tools.router)
     app.include_router(servers.router)
     app.include_router(agent.router)
+
+    # 阶段 3：Interactive Agent Workbench（纯静态三件套，随仓库提交，Vercel 一体化部署）
+    ui_dir = Path(__file__).resolve().parent / "ui"
+
+    @app.get("/ui", include_in_schema=False)
+    async def ui_index() -> FileResponse:
+        """/ui 精确路径直接返回工作台首页（StaticFiles 对目录路径会 307 到 /ui/）。"""
+        return FileResponse(ui_dir / "index.html")
+
+    app.mount("/ui", StaticFiles(directory=ui_dir, html=True), name="ui")
+
+    @app.get("/", include_in_schema=False)
+    async def index() -> RedirectResponse:
+        return RedirectResponse(url="/ui")
+
     return app
 
 
