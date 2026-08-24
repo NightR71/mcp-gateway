@@ -290,36 +290,36 @@ Interactive UI（/ui 工作台，链路时间线可视化）
 
 步骤：
 
-* [ ] **完成网关 LLM 调用依赖与 Agent 核心模块**
+* [x] **完成网关 LLM 调用依赖与 Agent 核心模块**
 
   * `pyproject.toml`：主依赖增加 `"httpx>=0.27.0"`，`uv lock` 更新。
   * 新建 `app/agent/__init__.py`、`app/agent/schemas.py`、`app/agent/models.py`、`app/agent/runner.py`。
   * `schemas.py`：定义 `AgentRequest`、`AgentStep`、`AgentResponse`。
-  * `models.py`：实现 `Model` Protocol、OpenAI 兼容模型工厂、`MockModel`。
-  * `runner.py`：实现 `AgentRunner`，内部循环直接调用 `registry.call_tool()`，不走 HTTP 回环；记录每一步延迟；工具列表先经过 router 过滤。
+  * `models.py`：实现 `Model` Protocol、OpenAI 兼容模型工厂（自持 httpx 客户端，`aclose()` 释放）、`MockModel`（含 `direct` 直接回答模式）。
+  * `runner.py`：实现 `AgentRunner`，内部循环直接调用 `registry.call_tool()`，不走 HTTP 回环；记录每一步延迟；工具列表先经过 router 过滤；`close()` 统一释放模型资源。
 
-* [ ] **完成 Agent 配置接入**
+* [x] **完成 Agent 配置接入**
 
   * `app/config.py`：新增 `AgentConfig(BaseModel)`（`enabled: bool = False`、`mock: bool = False`、`model: str = "gpt-4o-mini"`、`base_url: str = "https://api.openai.com/v1"`、`max_rounds: int = 8`、`routing_top_k: int = 10`）。
   * 新增 `get_agent_config()`，读取 YAML `agent:` 节。
   * **LLM API Key 只从环境变量 `GATEWAY_AGENT_API_KEY` 读取，绝不进 YAML**。
   * `config/gateway.yaml` 加 `agent:` 节，`enabled: false` 起步，`mock: true` 供离线演示。
 
-* [ ] **完成 `/agent/run` API 接入**
+* [x] **完成 `/agent/run` API 接入**
 
   * 新建 `app/api/routes/agent.py`。
   * `POST /agent/run` 使用 `ProtectedDep`，鉴权 + 限流与工具接口一致。
   * 返回 `AgentResponse`。
   * 未启用/未配 Key 且非 mock 时返回 503 和明确提示。
-  * 异常时保留已经发生的步骤信息。
+  * 异常时保留已经发生的步骤信息（runner 把单点工具失败记入 error step，不中断循环）。
 
-* [ ] **完成 Agent 生命周期接入**
+* [x] **完成 Agent 生命周期接入**
 
   * `app/main.py` include router。
   * lifespan 中根据 `AgentConfig` 惰性创建 `AgentRunner` 并挂 `app.state.agent_runner`。
   * 未启用时保持 `None`，路由返回 503。
 
-* [ ] **完成 AgentRunner 单元测试**
+* [x] **完成 AgentRunner 单元测试**
 
   * `tests/test_agent/test_runner.py` 至少覆盖：
 
@@ -329,7 +329,7 @@ Interactive UI（/ui 工作台，链路时间线可视化）
     * steps 类型与顺序；
     * `tools_injected <= tools_total`。
 
-* [ ] **完成 Agent API 测试**
+* [x] **完成 Agent API 测试**
 
   * `tests/test_agent/test_api.py` 至少覆盖：
 
@@ -775,20 +775,20 @@ Interactive UI（/ui 工作台，链路时间线可视化）
 
 ## 16. 当前状态（当前进度）
 
-- **当前阶段**：二阶段**阶段 1（Semantic Tool Routing）已完成**；基线 = 一阶段开发 + 二阶段阶段 0/1。
-- **已完成阶段**：一阶段 阶段 0（环境）、1（工程骨架+CI）、2（协议层）、3（统一 API + 鉴权限流）、4（指标 + NL2SQL + Docker + Vercel）、5 第一点（examples/ Agent 示例）；二阶段 阶段 0（基线）、阶段 1（Semantic Tool Routing）。
-- **正在进行**：无（阶段 2 待开始）。
-- **已完成任务（二阶段）**：阶段 0 三项（基线验证 / 文档整理提交 / git 确认）；阶段 1 六项（`app/mcp/tool_router.py`、配置接入、`/tools` query 参数、examples 接入、单元测试 13 例、API 测试 3 例 + examples 客户端透传测试 1 例）。
-- **测试数量**：89 例（71 基线 + 17 新增）；沙箱升级权限复验 87 通过 / 1 环境性失败 / 1 跳过。
-- **最新验证结果**（2026-08-24，本沙箱，升级权限复验）：`ruff check` + `ruff format --check` 全过（59 文件）；`pytest` 87 通过，唯一失败 `tests/test_mcp/test_http_transport.py`——交叉实验证实为沙箱对受限 python 进程 TCP 连接返回 502（127.0.0.1 亦拦截），纯环境性，非代码缺陷；运行验收通过：网关启动 `registry_ready connected=1 tools=4`，`/tools` 无参 4 个工具，`/tools?query=查询销售额` 仅返回 `demo_sql__ask`，`&top_k=2` 截断生效。
-- **已知问题**：SSE 传输无测试；Key 明文存储；限流单进程、桶无淘汰；无重连/总超时；Agent 不在网关内；无流式；无交互 UI——**由二阶段阶段 2–7 覆盖**（「无工具路由」已被阶段 1 解决）。
-- **环境问题**：DSH 沙箱（子进程/写限制 + **受限 python 进程 TCP 连接被拦截返回 502**，升级权限复验可排除除 http 传输测试外的全部）；uv 缓存损坏用 `UV_CACHE_DIR` 绕开；pyenv PATH 抢占（启动网关须 PATH 前置 `.venv\Scripts`）；本机 git ssl 配置；360 拦截子进程（见第 13 节）。
-- **下一步**：执行阶段 2（Agent 核心化）：httpx 进主依赖 + `app/agent/`（schemas/models/runner）+ `POST /agent/run` + 配置接入（`GATEWAY_AGENT_API_KEY` 只走环境变量）+ 测试（`tests/test_agent/`）。
+- **当前阶段**：二阶段**阶段 2（Agent 核心化）已完成**；基线 = 一阶段开发 + 二阶段阶段 0/1/2。
+- **已完成阶段**：一阶段 阶段 0（环境）、1（工程骨架+CI）、2（协议层）、3（统一 API + 鉴权限流）、4（指标 + NL2SQL + Docker + Vercel）、5 第一点（examples/ Agent 示例）；二阶段 阶段 0（基线）、1（Semantic Tool Routing）、2（Agent 核心化）。
+- **正在进行**：无（阶段 3 待开始）。
+- **已完成任务（二阶段）**：阶段 0 三项；阶段 1 六项；阶段 2 六项（httpx 进主依赖 + `app/agent/` 四模块、AgentConfig 接入、`POST /agent/run`、生命周期接入、runner 单测 7 例、API 测试 4 例）。
+- **测试数量**：100 例（72 基线 + 28 新增）；沙箱升级权限复验 98 通过 / 1 环境性失败 / 1 跳过。
+- **最新验证结果**（2026-08-24，本沙箱）：`ruff check` + `ruff format --check` 全过（66 文件）；`pytest` 98 通过，唯一失败 `tests/test_mcp/test_http_transport.py`（沙箱对受限 python 进程 TCP 连接返回 502，纯环境性）；运行验收通过：`POST /agent/run`（mock）返回 answer + steps（tools_total=4、tools_injected=1、rounds=2），「查询目前销售额最高的商品」经 ask 生成 `SELECT ROUND(SUM(amount),2) AS 总销售额...` 返回 20289.0。
+- **已知问题**：SSE 传输无测试；Key 明文存储；限流单进程、桶无淘汰；无重连/总超时；无流式；无交互 UI——**由二阶段阶段 3–7 覆盖**（「无工具路由」「Agent 不在网关内」已被阶段 1/2 解决）。
+- **环境问题**：DSH 沙箱（子进程/写限制 + 受限 python 进程 TCP 连接被拦截返回 502，升级权限复验可排除除 http 传输测试外的全部）；uv 缓存损坏用 `UV_CACHE_DIR` 绕开；pyenv PATH 抢占（启动网关须 PATH 前置 `.venv\Scripts`）；本机 git ssl 配置；360 拦截子进程（见第 13 节）。
+- **下一步**：执行阶段 3（Interactive Agent Workbench）：`app/ui/{index.html,app.js,style.css}` 纯静态三件套 + `app.mount("/ui")` + 根路径重定向 + `tests/test_ui.py`；同时把 `config/gateway.yaml` 的 `agent.enabled` 翻转为 true（mock）供浏览器演示。
 - **最后更新时间**：2026-08-24。
 
 ## 17. 下一步建议
 
 1. 新对话直接用第 0 节开场提示词开始。
-2. 第一个执行任务：阶段 2 任务 1（`pyproject.toml` 主依赖加 httpx + `uv lock`，新建 `app/agent/{schemas,models,runner}.py`，先写 `MockModel` 与 `AgentRunner` 再写测试）。
+2. 第一个执行任务：阶段 3 任务 1（新建 `app/ui/{index.html,app.js,style.css}` 纯静态三件套，再挂载 `/ui` 与根路径重定向，最后写 `tests/test_ui.py`）。
 3. 每个对话结束前必须：更新第 16 节 + git commit + 明确写出「下一步」。
 4. 遇到与本文档矛盾的事实，以代码为准，并把矛盾记录进第 16 节「已知问题」。

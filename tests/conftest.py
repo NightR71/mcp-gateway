@@ -7,7 +7,13 @@ import pytest
 from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 
-from app.config import get_auth_config, get_router_config, get_server_configs, get_settings
+from app.config import (
+    get_agent_config,
+    get_auth_config,
+    get_router_config,
+    get_server_configs,
+    get_settings,
+)
 from app.main import app
 
 TEST_CONFIG_FILE = Path(__file__).parent / "fixtures" / "gateway_test.yaml"
@@ -20,11 +26,13 @@ def reset_config_cache() -> AsyncIterator[None]:
     get_server_configs.cache_clear()
     get_auth_config.cache_clear()
     get_router_config.cache_clear()
+    get_agent_config.cache_clear()
     yield
     get_settings.cache_clear()
     get_server_configs.cache_clear()
     get_auth_config.cache_clear()
     get_router_config.cache_clear()
+    get_agent_config.cache_clear()
 
 
 @pytest.fixture
