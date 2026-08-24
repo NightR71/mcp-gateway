@@ -1,7 +1,10 @@
 # 测试专用配置：conftest 的 gateway_client fixture 通过 GATEWAY_CONFIG_FILE 指向本文件
 # - SQLite 用 ":memory:"，不产生文件、测试间天然隔离
+# - demo_sql 用 inprocess 传输（进程内加载，沙箱/CI 稳定，文档 §14 推荐；
+#   stdio 真实子进程路径由 tests/test_mcp/test_registry.py 覆盖）
 # - 两个测试 Key：test-key 正常配额；limited-key 极低配额（专测 429）
 # - routing.min_tools: 2 —— 4 个工具 > 2，query 过滤生效（专测阶段 1 语义路由）
+# - agent: mock 模式启用（专测阶段 2 /agent/run；mock 不需要 LLM Key）
 gateway:
   app_name: mcp-gateway-test
   log_level: WARNING
@@ -10,6 +13,12 @@ routing:
   enabled: true
   top_k: 10
   min_tools: 2
+
+agent:
+  enabled: true
+  mock: true
+  max_rounds: 8
+  routing_top_k: 10
 
 auth:
   db_path: ":memory:"
@@ -23,6 +32,5 @@ auth:
 
 servers:
   - name: demo_sql
-    transport: stdio
-    command: python
-    args: ["servers/demo_sql_server/server.py"]
+    transport: inprocess
+    module: servers.demo_sql_server.server:server

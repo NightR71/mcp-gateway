@@ -133,3 +133,23 @@ class ToolRouterConfig(BaseModel):
 def get_router_config() -> ToolRouterConfig:
     """获取工具路由配置（进程级缓存），缺省用默认值。"""
     return ToolRouterConfig(**_load_yaml(_config_file()).get("routing", {}))
+
+
+class AgentConfig(BaseModel):
+    """网关内 Agent 能力配置（config/gateway.yaml 的 agent 节，阶段 2）。
+
+    LLM API Key **只从环境变量 GATEWAY_AGENT_API_KEY 读取**，绝不进 YAML。
+    """
+
+    enabled: bool = False
+    mock: bool = False  # 离线演示：用假模型，不需要 LLM Key
+    model: str = "gpt-4o-mini"
+    base_url: str = "https://api.openai.com/v1"
+    max_rounds: int = 8
+    routing_top_k: int = 10
+
+
+@lru_cache
+def get_agent_config() -> AgentConfig:
+    """获取 Agent 配置（进程级缓存），缺省用默认值。"""
+    return AgentConfig(**_load_yaml(_config_file()).get("agent", {}))

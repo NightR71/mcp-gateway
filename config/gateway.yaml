@@ -29,6 +29,19 @@ routing:
   top_k: 10
   min_tools: 3
 
+# 网关内 Agent 能力配置（阶段 2：POST /agent/run）
+# enabled：是否启用 /agent/run（未启用返回 503；保守默认，需显式打开）
+# mock：离线演示用假模型，不需要 LLM Key（阶段 3 工作台演示用）
+# model/base_url：OpenAI 兼容端点（One-API / Ollama / DeepSeek 等）
+# LLM API Key 只从环境变量 GATEWAY_AGENT_API_KEY 读取，绝不写入本文件
+agent:
+  enabled: false
+  mock: true
+  model: gpt-4o-mini
+  base_url: https://api.openai.com/v1
+  max_rounds: 8
+  routing_top_k: 10
+
 # MCP Server 声明列表（YAML 声明、无需改代码）
 # 示例：
 #   - name: remote_api

@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Request
 
+from app.agent.runner import AgentRunner
 from app.config import Settings, get_router_config, get_settings
 from app.core.logging import get_logger
 from app.core.rate_limit import RateLimiter
@@ -48,6 +49,17 @@ RouterDep = Annotated[ToolRouter, Depends(get_router)]
 def router_enabled() -> bool:
     """语义路由是否启用（YAML routing.enabled，进程级缓存）。"""
     return get_router_config().enabled
+
+
+def get_agent_runner(request: Request) -> AgentRunner | None:
+    """从 app.state 拿 AgentRunner（lifespan 按 AgentConfig 惰性创建）。
+
+    未启用（agent.enabled=false 或未配 Key）时为 None，路由返回 503。
+    """
+    return getattr(request.app.state, "agent_runner", None)  # type: ignore[no-any-return]
+
+
+AgentDep = Annotated[AgentRunner | None, Depends(get_agent_runner)]
 
 
 def get_key_store(request: Request) -> APIKeyStore:
