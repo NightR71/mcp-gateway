@@ -19,3 +19,10 @@ servers:
   - name: demo_sql
     transport: inprocess
     module: servers.demo_sql_server.server:server
+
+# 公网工作台演示：mock 模式 Agent（不需要 LLM Key，Serverless 冷启动首请求 1-3 秒）
+agent:
+  enabled: true
+  mock: true
+  max_rounds: 8
+  routing_top_k: 10

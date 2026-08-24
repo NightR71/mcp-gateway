@@ -355,7 +355,7 @@ Interactive UI（/ui 工作台，链路时间线可视化）
 
 步骤：
 
-* [ ] **完成 `app/ui/` 静态工作台**
+* [x] **完成 `app/ui/` 静态工作台**
 
   * 新建 `app/ui/index.html`、`app.js`、`style.css`。
   * **纯静态三件套，无任何前端构建链、无框架、无 CDN**。
@@ -364,13 +364,13 @@ Interactive UI（/ui 工作台，链路时间线可视化）
   * `app.js`：调用 `POST /agent/run`，按 `AgentResponse.steps` 渲染时间线；显示 `tools_injected/tools_total`；处理 401/429/503/连接错误；提供健康检查与工具列表自检。
   * `style.css`：极简深色终端风，不追求复杂视觉效果。
 
-* [ ] **完成 FastAPI UI 挂载**
+* [x] **完成 FastAPI UI 挂载**
 
-  * `app/main.py`：`app.mount("/ui", StaticFiles(directory=..., html=True), name="ui")`。
+  * `app/main.py`：`app.mount("/ui", StaticFiles(directory=..., html=True), name="ui")`；另加 `GET /ui` 精确路由直接返回 index.html（StaticFiles 对目录路径会 307 到 `/ui/`）。
   * `GET /` 使用 `RedirectResponse` 跳转 `/ui`。
   * UI 路径使用 `Path(__file__).parent / "ui"`，确保本地和 Vercel 路径稳定。
 
-* [ ] **完成 UI 使用说明与最小测试**
+* [x] **完成 UI 使用说明与最小测试**
 
   * `README.md` 与 `examples/README.md` 各增加浏览器访问方式。
   * 新建 `tests/test_ui.py`，覆盖：
@@ -379,13 +379,14 @@ Interactive UI（/ui 工作台，链路时间线可视化）
     * `GET /` 302/307 到 `/ui`；
     * 无 Key 调 `/agent/run` 仍 401。
 
-* [ ] **完成浏览器端完整运行验收**
+* [x] **完成浏览器端完整运行验收**
 
   * 启动网关（mock 模式）→ 浏览器打开 `http://localhost:8000/ui`。
   * 输入「查询目前销售额最高的商品」。
   * 时间线完整展示工具选择 → Gateway 鉴权/限流/执行 → Tool Result → Final Answer。
   * 显示工具数量、注入数量与延迟。
   * 确认 `/docs` 仍可用。
+  * （本沙箱以 HTTP 全端点验收替代真实浏览器交互：`/` 307→`/ui`、`/ui` 200 含 `<html`、`/ui/app.js` 200、`/docs` 200、`POST /agent/run` 200 返回 answer+steps；真实浏览器打开路径一致。）
 
 验收：
 
@@ -775,20 +776,20 @@ Interactive UI（/ui 工作台，链路时间线可视化）
 
 ## 16. 当前状态（当前进度）
 
-- **当前阶段**：二阶段**阶段 2（Agent 核心化）已完成**；基线 = 一阶段开发 + 二阶段阶段 0/1/2。
-- **已完成阶段**：一阶段 阶段 0（环境）、1（工程骨架+CI）、2（协议层）、3（统一 API + 鉴权限流）、4（指标 + NL2SQL + Docker + Vercel）、5 第一点（examples/ Agent 示例）；二阶段 阶段 0（基线）、1（Semantic Tool Routing）、2（Agent 核心化）。
-- **正在进行**：无（阶段 3 待开始）。
-- **已完成任务（二阶段）**：阶段 0 三项；阶段 1 六项；阶段 2 六项（httpx 进主依赖 + `app/agent/` 四模块、AgentConfig 接入、`POST /agent/run`、生命周期接入、runner 单测 7 例、API 测试 4 例）。
-- **测试数量**：100 例（72 基线 + 28 新增）；沙箱升级权限复验 98 通过 / 1 环境性失败 / 1 跳过。
-- **最新验证结果**（2026-08-24，本沙箱）：`ruff check` + `ruff format --check` 全过（66 文件）；`pytest` 98 通过，唯一失败 `tests/test_mcp/test_http_transport.py`（沙箱对受限 python 进程 TCP 连接返回 502，纯环境性）；运行验收通过：`POST /agent/run`（mock）返回 answer + steps（tools_total=4、tools_injected=1、rounds=2），「查询目前销售额最高的商品」经 ask 生成 `SELECT ROUND(SUM(amount),2) AS 总销售额...` 返回 20289.0。
-- **已知问题**：SSE 传输无测试；Key 明文存储；限流单进程、桶无淘汰；无重连/总超时；无流式；无交互 UI——**由二阶段阶段 3–7 覆盖**（「无工具路由」「Agent 不在网关内」已被阶段 1/2 解决）。
+- **当前阶段**：二阶段**阶段 3（Interactive Agent Workbench）已完成**；基线 = 一阶段开发 + 二阶段阶段 0/1/2/3。
+- **已完成阶段**：一阶段 阶段 0–4 + 5 第一点；二阶段 阶段 0（基线）、1（Semantic Tool Routing）、2（Agent 核心化）、3（Agent Workbench UI）。
+- **正在进行**：无（阶段 4 待开始）。
+- **已完成任务（二阶段）**：阶段 0 三项；阶段 1 六项；阶段 2 六项；阶段 3 四项（`app/ui/` 三件套、FastAPI 挂载 + 根路径重定向、README/测试 4 例、运行验收）。
+- **测试数量**：104 例（72 基线 + 32 新增）；沙箱升级权限复验 102 通过 / 1 环境性失败 / 1 跳过。
+- **最新验证结果**（2026-08-24，本沙箱）：`ruff check` + `ruff format --check` 全过（67 文件）；`pytest` 102 通过，唯一失败 `tests/test_mcp/test_http_transport.py`（沙箱 TCP 拦截，纯环境性）；运行验收（默认配置，mock agent 已默认启用）：`/` 307→`/ui`、`/ui` 200 含 `<html`、`/ui/app.js` 200、`/docs` 200、`/tools` 4 个、`POST /agent/run` 200（rounds=2、injected 1/4、销售额查询返回 20289.0）。
+- **已知问题**：SSE 传输无测试；Key 明文存储；限流单进程、桶无淘汰；无重连/总超时；无流式——**由二阶段阶段 4、7 覆盖**（「无工具路由」「Agent 不在网关内」「无交互 UI」已被阶段 1/2/3 解决）。
 - **环境问题**：DSH 沙箱（子进程/写限制 + 受限 python 进程 TCP 连接被拦截返回 502，升级权限复验可排除除 http 传输测试外的全部）；uv 缓存损坏用 `UV_CACHE_DIR` 绕开；pyenv PATH 抢占（启动网关须 PATH 前置 `.venv\Scripts`）；本机 git ssl 配置；360 拦截子进程（见第 13 节）。
-- **下一步**：执行阶段 3（Interactive Agent Workbench）：`app/ui/{index.html,app.js,style.css}` 纯静态三件套 + `app.mount("/ui")` + 根路径重定向 + `tests/test_ui.py`；同时把 `config/gateway.yaml` 的 `agent.enabled` 翻转为 true（mock）供浏览器演示。
+- **下一步**：执行阶段 4（Streaming）：Model 流式能力（`chat_stream` + SSE 解析）、`AgentRunner.run_stream`、`POST /agent/run/stream` 与 `POST /tools/{name}/call/stream` 两个 SSE 端点、`app/ui/app.js` 切流式渲染、`tests/test_agent/test_stream.py` + 工具流式测试。
 - **最后更新时间**：2026-08-24。
 
 ## 17. 下一步建议
 
 1. 新对话直接用第 0 节开场提示词开始。
-2. 第一个执行任务：阶段 3 任务 1（新建 `app/ui/{index.html,app.js,style.css}` 纯静态三件套，再挂载 `/ui` 与根路径重定向，最后写 `tests/test_ui.py`）。
+2. 第一个执行任务：阶段 4 任务 1（`app/agent/models.py` 增加 `chat_stream` 流式能力：httpx `stream=True` + SSE 解析，`MockModel` 假 token 流），随后 runner 的 `run_stream` 与两个 SSE 端点。
 3. 每个对话结束前必须：更新第 16 节 + git commit + 明确写出「下一步」。
 4. 遇到与本文档矛盾的事实，以代码为准，并把矛盾记录进第 16 节「已知问题」。

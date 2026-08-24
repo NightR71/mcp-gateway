@@ -19,6 +19,14 @@ uv sync                        # 安装项目依赖
 uv run uvicorn app.main:app    # 终端 1：启动网关（启动时自动连上 demo_sql_server）
 ```
 
+## 0. 浏览器工作台（不写代码也能看完整链路）
+
+启动网关后浏览器打开 `http://localhost:8000/`（或 `/ui`）——**MCP Agent Workbench**：
+输入问题（如「查询目前销售额最高的商品」），时间线逐卡展示 工具选择（语义路由注入
+top-k）→ 网关鉴权/限流/执行 → 工具结果 → 最终回答，并显示工具总数/注入数/轮数与延迟。
+默认 `agent.mock: true` 开箱即用（不需要任何 LLM Key）；顶部 Key 输入框填演示 Key
+`dev-key-please-change` 即可。
+
 ## 1. 离线演示（推荐先跑，不需要任何 API Key）
 
 ```bash

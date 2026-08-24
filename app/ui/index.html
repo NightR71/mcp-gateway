@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MCP Agent Workbench</title>
+  <link rel="stylesheet" href="/ui/style.css" />
+</head>
+<body>
+  <header id="status-bar">
+    <span class="brand">MCP Agent Workbench</span>
+    <span id="tool-count" class="pill" title="网关聚合工具数 / 本轮注入数">工具: -/- · 注入: -</span>
+    <span id="round-info" class="pill hidden">轮数: -</span>
+    <span id="gateway-url" class="pill">网关: 本机</span>
+    <label class="key-label">Key
+      <input id="api-key" type="password" placeholder="X-API-Key" autocomplete="off" />
+    </label>
+  </header>
+
+  <main id="timeline" aria-live="polite">
+    <div class="empty-hint">输入问题开始一次 Agent 任务（工具选择 → 网关执行 → 结果回填 → 最终回答）。</div>
+  </main>
+
+  <footer id="input-bar">
+    <input id="question" type="text" placeholder="例如：查询目前销售额最高的商品" autocomplete="off" />
+    <button id="send-btn" type="button">发送</button>
+    <button id="health-btn" class="ghost" type="button">健康检查</button>
+    <button id="tools-btn" class="ghost" type="button">列出工具</button>
+  </footer>
+
+  <script src="/ui/app.js"></script>
+</body>
+</html>
