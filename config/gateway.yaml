@@ -11,12 +11,25 @@ gateway:
 # db_path：SQLite 存储路径（":memory:" 为纯内存，重启即丢）
 # api_keys：启动时种子写入（已存在则跳过）；演示 Key 明文入库仅为 MVP 方便，
 #          生产环境应改用密钥管理/环境变量下发
+# tenant：租户标识（阶段 6 最小多租户；未配置时归入 "default"）
+# allowed_tools：工具白名单（{server}__{tool} 全名）；未设置 = 全部工具可访问
 auth:
   db_path: data/gateway.db
   api_keys:
+    # 演示 Key：tenant=demo，未设 allowed_tools（全量工具）
     - key: dev-key-please-change
       name: demo
+      tenant: demo
       rate_limit_per_minute: 60
+    # 白名单演示 Key（阶段 6）：tenant=demo，只允许 demo_sql__ask
+    # 用途：演示「最小多租户 + 工具白名单」——该 Key 在 /tools 只见 ask，
+    #       调用其他工具（如 run_sql）返回 403
+    - key: limited-tools-key
+      name: limited-tools
+      tenant: demo
+      rate_limit_per_minute: 60
+      allowed_tools:
+        - demo_sql__ask
 
 # 语义工具路由配置（阶段 1：GET /tools?query= 按关键词过滤 + top-k 注入）
 # enabled：是否启用 query 过滤（false 时 /tools?query= 与无参行为一致）

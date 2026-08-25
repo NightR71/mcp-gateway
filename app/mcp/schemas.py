@@ -50,3 +50,7 @@ class ServerStatus(BaseModel):
 
 class UnknownToolError(KeyError):
     """调用了 registry 中不存在的工具。"""
+
+
+class ToolNotAllowedError(Exception):
+    """工具真实存在但不在当前 API Key 的白名单内（API 层映射为 403）。"""

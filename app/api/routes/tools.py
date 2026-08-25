@@ -8,7 +8,13 @@ from fastapi.responses import StreamingResponse
 
 from app.api.deps import ProtectedDep, RegistryDep, RouterDep, router_enabled
 from app.core.logging import get_logger
-from app.mcp.schemas import ToolCallRequest, ToolCallResult, ToolInfo, UnknownToolError
+from app.mcp.schemas import (
+    ToolCallRequest,
+    ToolCallResult,
+    ToolInfo,
+    ToolNotAllowedError,
+    UnknownToolError,
+)
 
 router = APIRouter(tags=["tools"])
 logger = get_logger(__name__)
@@ -17,7 +23,7 @@ logger = get_logger(__name__)
 @router.get("/tools", response_model=list[ToolInfo])
 async def list_tools(
     registry: RegistryDep,
-    _key: ProtectedDep,
+    api_key: ProtectedDep,
     router: RouterDep,
     query: str | None = None,
     top_k: int | None = None,
@@ -27,8 +33,9 @@ async def list_tools(
     - 无 `query` 时行为与一阶段完全一致（全量返回）。
     - 有 `query` 且路由启用（routing.enabled）时按关键词语义过滤并 top-k 截断，
       供 Agent 只注入相关工具（阶段 1 Semantic Tool Routing）。
+    - 阶段 6：先按当前 Key 的白名单过滤（allowed_tools=None 时仍全量）。
     """
-    tools = registry.list_tools()
+    tools = registry.list_tools_for(api_key)
     if query and router_enabled():
         return router.search(query, tools, top_k)
     return tools
@@ -38,11 +45,18 @@ async def list_tools(
 async def call_tool(
     tool_name: str, body: ToolCallRequest, registry: RegistryDep, api_key: ProtectedDep
 ) -> ToolCallResult:
-    """按命名空间工具名路由到对应 MCP Server 调用。"""
+    """按命名空间工具名路由到对应 MCP Server 调用。
+
+    阶段 6：真实存在但不在 Key 白名单内的工具返回 403；不存在的仍 404。
+    """
     try:
+        registry.get_tool_for(api_key, tool_name)  # 可见性预检（404 未知 / 403 白名单外）
         return await registry.call_tool(tool_name, body.arguments)
     except UnknownToolError:
         raise HTTPException(status_code=404, detail=f"未知工具: {tool_name}") from None
+    except ToolNotAllowedError:
+        logger.warning("tool_not_allowed", tool=tool_name, caller=api_key.name)
+        raise HTTPException(status_code=403, detail=f"无权调用工具: {tool_name}") from None
     except Exception as exc:
         logger.error("tool_call_failed", tool=tool_name, caller=api_key.name, error=str(exc))
         raise HTTPException(status_code=502, detail=f"工具调用失败: {exc}") from exc
@@ -58,12 +72,16 @@ async def call_tool_stream(
     """SSE 流式工具调用（阶段 4）：事件顺序 `start` → `result` → `done`。
 
     内部仍调用 registry.call_tool()；同步 `/tools/{tool_name}/call` 一字不改。
-    未知工具在流开始前校验（保持 404 语义）；调用失败发 `error` 事件。
+    未知工具在流开始前校验（保持 404 语义）；白名单外工具同样在流开始前
+    返回 403（阶段 6，防止经流式端点绕过白名单）；调用失败发 `error` 事件。
     """
     try:
-        registry.get_tool(tool_name)  # 流开始前校验，保证 404 语义不变
+        registry.get_tool_for(api_key, tool_name)  # 流开始前校验：404 未知 / 403 白名单外
     except UnknownToolError:
         raise HTTPException(status_code=404, detail=f"未知工具: {tool_name}") from None
+    except ToolNotAllowedError:
+        logger.warning("tool_not_allowed", tool=tool_name, caller=api_key.name)
+        raise HTTPException(status_code=403, detail=f"无权调用工具: {tool_name}") from None
 
     async def event_source() -> AsyncIterator[str]:
         yield f"event: start\ndata: {json.dumps({'tool': tool_name}, ensure_ascii=False)}\n\n"

@@ -20,8 +20,10 @@ from app.mcp.schemas import (
     ServerStatus,
     ToolCallResult,
     ToolInfo,
+    ToolNotAllowedError,
     UnknownToolError,
 )
+from app.schemas.auth import APIKeyInfo
 
 logger = get_logger(__name__)
 
@@ -86,6 +88,29 @@ class ToolRegistry:
         """聚合后的全部工具（含命名空间前缀）。"""
         return list(self._tools.values())
 
+    def list_tools_for(self, key: APIKeyInfo) -> list[ToolInfo]:
+        """按 API Key 的工具白名单过滤（阶段 6）。
+
+        - `allowed_tools is None`（未配置/旧数据）= 不限制，返回全量；
+        - 否则只返回白名单内（{server}__{tool} 全名）的工具。
+        路由层直接消费本方法，不在路由里重复实现白名单业务逻辑。
+        """
+        if key.allowed_tools is None:
+            return self.list_tools()
+        allowed = set(key.allowed_tools)
+        return [tool for tool in self._tools.values() if tool.name in allowed]
+
+    def get_tool_for(self, key: APIKeyInfo, namespaced_name: str) -> ToolInfo:
+        """按 API Key 取工具（含可见性校验）。
+
+        不存在 → `UnknownToolError`（API 层 404）；真实存在但白名单外 →
+        `ToolNotAllowedError`（API 层 403）。
+        """
+        tool = self.get_tool(namespaced_name)
+        if key.allowed_tools is not None and tool.name not in key.allowed_tools:
+            raise ToolNotAllowedError(namespaced_name)
+        return tool
+
     def get_tool(self, namespaced_name: str) -> ToolInfo:
         try:
             return self._tools[namespaced_name]
@@ -107,8 +132,13 @@ class ToolRegistry:
             is_error=result.is_error,
         )
 
-    def server_status(self) -> list[ServerStatus]:
-        """所有声明 server 的连接状态（含失败的）。"""
+    def server_status(self, key: APIKeyInfo | None = None) -> list[ServerStatus]:
+        """所有声明 server 的连接状态（含失败的）。
+
+        `key` 为 None 时 tool_count 统计全量工具（兼容旧调用）；传入 Key 时
+        按该 Key 可见的工具数统计（阶段 6 白名单）。
+        """
+        visible = None if key is None else {t.name for t in self.list_tools_for(key)}
         statuses = []
         for name, config in self._configs.items():
             connected = name in self._clients
@@ -117,7 +147,11 @@ class ToolRegistry:
                     name=name,
                     transport=config.transport,
                     connected=connected,
-                    tool_count=sum(1 for s in self._tool_server.values() if s == name),
+                    tool_count=sum(
+                        1
+                        for tool_name, srv in self._tool_server.items()
+                        if srv == name and (visible is None or tool_name in visible)
+                    ),
                     error=None if connected else self._errors.get(name, "未连接"),
                 )
             )
