@@ -11,9 +11,10 @@
 独立运行方式：
     python servers/demo_sql_server/server.py            # stdio（供网关拉起）
     DEMO_SQL_TRANSPORT=http python .../server.py        # Streamable HTTP（docker 用）
+    DEMO_SQL_TRANSPORT=sse python .../server.py         # SSE（阶段 7 测试用，与 http 同构）
 
 环境变量：
-    DEMO_SQL_TRANSPORT  stdio（默认）/ http
+    DEMO_SQL_TRANSPORT  stdio（默认）/ http / sse
     DEMO_SQL_HOST       http 模式监听地址（默认 0.0.0.0）
     DEMO_SQL_PORT       http 模式端口（默认 9001）
     DEMO_SQL_DB_PATH    SQLite 路径（默认 data/demo_sql.db）
@@ -164,6 +165,12 @@ if __name__ == "__main__":
     if transport == "http":
         server.run(
             transport="streamable-http",
+            host=os.getenv("DEMO_SQL_HOST", "0.0.0.0"),
+            port=int(os.getenv("DEMO_SQL_PORT", "9001")),
+        )
+    elif transport == "sse":
+        server.run(
+            transport="sse",
             host=os.getenv("DEMO_SQL_HOST", "0.0.0.0"),
             port=int(os.getenv("DEMO_SQL_PORT", "9001")),
         )
