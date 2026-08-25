@@ -4,6 +4,25 @@
 > 依据 Vercel 官方文档（2026-07 更新）：Python 运行时默认 3.12、支持 pyproject.toml + uv.lock 装依赖、
 > 支持 FastAPI lifespan 启动事件、自动识别 `app/main.py` 里的 `app` 实例——**本仓库已满足全部约定，零代码改动**。
 
+## ✅ 二阶段重部署记录（2026-08-25，已完成并验证）
+
+二阶段（阶段 0–7 全部收官）已重新部署上线：push `1d739e9`（main 领先 origin 5 个提交：阶段 6 完整版 + 阶段 7 全部）→
+Vercel Git 集成自动构建 → GitHub commit status `success / Deployment has completed`。线上实测全部通过：
+
+| 检查项 | 结果 |
+|---|---|
+| `/health` | 200 `{"status":"ok","app_name":"mcp-gateway","version":"0.1.0"}` |
+| `/tools` 带 Key | 200，恰好 4 个 `demo_sql__*` 工具 |
+| `/tools` 无 Key | 401 |
+| `/servers` | 200：`transport:"inprocess" connected:true tool_count:4`，**含阶段 7 新字段 `retry_attempts`/`next_retry_at`**（旧版没有，可作版本判别特征） |
+| `/ui` 工作台 | 200，返回 MCP Agent Workbench HTML；`/` 重定向到 `/ui` |
+| `POST /agent/run` | 200（mock 模式）：answer + steps，NL2SQL 闭环 `SELECT COUNT(*)` + `\| 5 \|` |
+| `POST /tools/{name}/call/stream` | 200 `text/event-stream`，事件序列 `start → result → done` 完整（**SSE 在 Vercel 上实测未被缓冲**，此前担心的缓冲问题未出现） |
+
+验证方式说明：本沙箱 curl.exe / PowerShell TLS 均被环境拦截（WinError 10060 / SSL EOF），最终用 `.venv` python
+（忽略证书校验）验证；大陆 DNS 污染仍存在（偶发连接超时，重试即成功）。海外网络验收仍推荐
+Actions → demo-health → Run workflow（默认参数即可）。
+
 ## ⚠️ 大陆访问限制（2026-08-17 实测）
 
 `*.vercel.app` 在大陆被 DNS 污染（实测解析到 Twitter/Facebook 的假 IP，TCP 443 不通，curl HTTP 000），
