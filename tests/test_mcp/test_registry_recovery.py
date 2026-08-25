@@ -16,10 +16,11 @@ from collections.abc import AsyncIterator
 
 import mcp.types as mcp_types
 import pytest
+from prometheus_client import REGISTRY
 
 from app.config import MCPServerConfig
-from app.mcp.registry import ToolRegistry
-from app.mcp.schemas import ServerStatus
+from app.mcp.registry import ToolRegistry, classify_error
+from app.mcp.schemas import ServerStatus, ToolCallTimeoutError
 
 TOOL = mcp_types.Tool(
     name="echo",
@@ -29,7 +30,10 @@ TOOL = mcp_types.Tool(
 
 
 class FakeClient:
-    """可控 fake client：向工厂查询「本次连接是否应失败」（按尝试次数全局消费）。"""
+    """可控 fake client：向工厂查询「本次连接是否应失败」（按尝试次数全局消费）。
+
+    调用行为可注入：`call_error`（call 时抛出的异常）、`call_delay`（call 前 sleep 秒数）。
+    """
 
     def __init__(self, name: str, factory: "FakeClientFactory") -> None:
         self.name = name
@@ -37,6 +41,8 @@ class FakeClient:
         self.connect_calls = 0
         self.connected = False
         self.closed = False
+        self.call_error: Exception | None = None
+        self.call_delay: float = 0.0
 
     async def connect(self) -> None:
         self.connect_calls += 1
@@ -46,6 +52,15 @@ class FakeClient:
 
     async def list_tools(self) -> list[mcp_types.Tool]:
         return [TOOL]
+
+    async def call_tool(
+        self, tool_name: str, arguments: dict, *, read_timeout: float | None = None
+    ):
+        if self.call_delay:
+            await asyncio.sleep(self.call_delay)
+        if self.call_error is not None:
+            raise self.call_error
+        return mcp_types.CallToolResult(content=[mcp_types.TextContent(type="text", text="ok")])
 
     async def close(self) -> None:
         self.closed = True
@@ -84,9 +99,14 @@ def _make_registry(
     *,
     retry_base: float = 60.0,  # 默认放大的退避，避免后台循环在测试内干扰
     retry_max: float = 120.0,
+    tool_call_timeout: float = 30.0,
 ) -> ToolRegistry:
     return ToolRegistry(
-        (_config(),), client_factory=factory, retry_base=retry_base, retry_max=retry_max
+        (_config(),),
+        client_factory=factory,
+        retry_base=retry_base,
+        retry_max=retry_max,
+        tool_call_timeout=tool_call_timeout,
     )
 
 
@@ -238,3 +258,72 @@ def test_server_status_new_field_defaults() -> None:
     status = ServerStatus(name="s", transport="stdio", connected=False)
     assert status.retry_attempts == 0
     assert status.next_retry_at is None
+
+
+# ---------- 阶段 7 任务 2：总超时与错误分类 ----------
+
+
+async def test_classify_error_mapping() -> None:
+    """错误分类三分：timeout / connection / tool_error。"""
+    assert classify_error(TimeoutError("t")) == "timeout"  # 3.11+ 与 asyncio.TimeoutError 同义
+    assert classify_error(ConnectionError("c")) == "connection"
+    assert classify_error(RuntimeError("r")) == "connection"
+    assert classify_error(OSError("o")) == "connection"
+    assert classify_error(ValueError("v")) == "tool_error"
+    assert classify_error(KeyError("k")) == "tool_error"
+
+
+async def test_call_connection_error_marks_failed_and_removes_tools() -> None:
+    """运行期连接类异常 → mark_failed：摘除工具、进入失败状态、异步关闭旧连接。"""
+    factory = FakeClientFactory()
+    r = _make_registry(factory)
+    await r.connect_all()
+    factory.clients[-1].call_error = ConnectionError("connection reset")
+
+    with pytest.raises(ConnectionError):
+        await r.call_tool("demo__echo", {})
+
+    assert "demo" not in r._clients
+    assert r.list_tools() == []
+    status = r.server_status()[0]
+    assert status.connected is False
+    assert status.retry_attempts == 1
+    assert "connection reset" in (status.error or "")
+    await asyncio.sleep(0)  # fire-and-forget 的 close 任务执行
+    assert factory.clients[-1].closed is True
+    await r.close()
+
+
+async def test_call_timeout_raises_tool_call_timeout_error() -> None:
+    """总超时 → ToolCallTimeoutError（明确提示）；连接/工具保留；记 exception 指标。"""
+    factory = FakeClientFactory()
+    r = _make_registry(factory, tool_call_timeout=0.1)
+    await r.connect_all()
+    factory.clients[-1].call_delay = 0.3  # 超过 0.1s 总时长上限
+
+    before = (
+        REGISTRY.get_sample_value(
+            "mcp_gateway_tool_calls_total",
+            {"tool": "demo__echo", "server": "demo", "status": "exception"},
+        )
+        or 0.0
+    )
+
+    with pytest.raises(ToolCallTimeoutError) as exc_info:
+        await r.call_tool("demo__echo", {})
+
+    assert exc_info.value.timeout == 0.1
+    assert "工具调用超时（>0.1s）" in str(exc_info.value)
+    # 超时不触发自愈：连接与工具保留
+    assert r.server_status()[0].connected is True
+    assert [t.name for t in r.list_tools()] == ["demo__echo"]
+    # 指标：exception 计数 +1（ToolCallTimer 在异常时自动记录）
+    after = (
+        REGISTRY.get_sample_value(
+            "mcp_gateway_tool_calls_total",
+            {"tool": "demo__echo", "server": "demo", "status": "exception"},
+        )
+        or 0.0
+    )
+    assert after == before + 1
+    await r.close()
