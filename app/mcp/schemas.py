@@ -39,13 +39,19 @@ class ToolCallResult(BaseModel):
 
 
 class ServerStatus(BaseModel):
-    """单个 MCP Server 的连接状态（供阶段 3 的 /servers 接口使用）。"""
+    """单个 MCP Server 的连接状态（供阶段 3 的 /servers 接口使用）。
+
+    阶段 7：`retry_attempts` / `next_retry_at` 展示自动重连状态——
+    未处于失败状态的 server 保持 0 / None，旧客户端不受影响。
+    """
 
     name: str
     transport: Literal["stdio", "sse", "http", "inprocess"]
     connected: bool
     tool_count: int = 0
     error: str | None = None
+    retry_attempts: int = 0  # 已连续失败的次数（0 = 未处于失败状态）
+    next_retry_at: float | None = None  # 下次自动重试时间（time.monotonic() 秒；None = 无重试计划）
 
 
 class UnknownToolError(KeyError):
