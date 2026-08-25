@@ -542,7 +542,7 @@ Interactive UI（/ui 工作台，链路时间线可视化）
 
 步骤：
 
-* [ ] **完成 API Key Schema 的 tenant / allowed_tools 扩展**
+* [x] **完成 API Key Schema 的 tenant / allowed_tools 扩展**
 
   * `app/schemas/auth.py`：
 
@@ -777,20 +777,20 @@ Interactive UI（/ui 工作台，链路时间线可视化）
 
 ## 16. 当前状态（当前进度）
 
-- **当前阶段**：二阶段**阶段 5（NL2SQL 双引擎）已完成**；基线 = 一阶段开发 + 二阶段阶段 0–5。
+- **当前阶段**：二阶段**阶段 6（最小多租户 + 工具白名单）进行中**；基线 = 一阶段开发 + 二阶段阶段 0–5。
 - **已完成阶段**：一阶段 阶段 0–4 + 5 第一点；二阶段 阶段 0（基线）、1（Semantic Tool Routing）、2（Agent 核心化）、3（Agent Workbench UI）、4（Streaming）、5（NL2SQL 双引擎）。
-- **正在进行**：无（阶段 6 待开始）。
-- **已完成任务（二阶段）**：阶段 0 三项；阶段 1 六项；阶段 2 六项；阶段 3 四项；阶段 4 七项；阶段 5 五项（`llm_translator.py`、Translator Protocol + 工厂、ask 双引擎接入 + 引擎标注、LLM Translator 测试 6 例、NL2SQL 工厂/兼容测试 8 例）。
-- **测试数量**：128 例（72 基线 + 56 新增）；沙箱升级权限复验 **127 通过 / 1 跳过 / 0 失败**（http 传输测试本次环境恢复通过）。
-- **最新验证结果**（2026-08-24，本沙箱）：`ruff check` + `ruff format --check` 全过（70 文件）；`pytest` 全量 127 通过 + 1 跳过（langchain agent 组），**零失败**——含此前环境性失败的 `test_http_transport`（本次沙箱环境恢复后连续复验通过）；运行验收：hybrid 模式 + LLM 不可达时规则命中正常出 SQL 且标注「引擎：规则」，规则未命中走示例兜底不崩溃（LLM 失败返回 None 由规则路径兜底）。
-- **已知问题**：Key 明文存储；限流单进程、桶无淘汰；无重连/总超时（阶段 7）；无多租户/白名单（阶段 6）。
-- **环境问题**：DSH 沙箱（子进程/写限制 + 受限 python 进程 TCP 连接偶发 502——本次已恢复，历史为环境性）；uv 缓存损坏用 `UV_CACHE_DIR` 绕开；pyenv PATH 抢占（启动网关须 PATH 前置 `.venv\Scripts`）；本机 git ssl 配置；360 拦截子进程（见第 13 节）。
-- **下一步**：执行阶段 6（最小多租户 + 工具白名单，独立）：`APIKeyInfo` 增加 `tenant`/`allowed_tools`（None=全部）+ SQLite 迁移（PRAGMA 查列 + 幂等 ALTER）+ registry `list_tools_for(key)` + `GET /tools`/`call` 白名单检查（不可见 403、不存在 404）+ `/servers` tool_count 按可见数 + `limited-tools-key` 演示配置 + 权限 API 测试与迁移测试。
-- **最后更新时间**：2026-08-24。
+- **正在进行**：阶段 6（任务 1 已完成，任务 2 待开始）。
+- **已完成任务（二阶段）**：阶段 0 三项；阶段 1 六项；阶段 2 六项；阶段 3 四项；阶段 4 七项；阶段 5 五项（`llm_translator.py`、Translator Protocol + 工厂、ask 双引擎接入 + 引擎标注、LLM Translator 测试 6 例、NL2SQL 工厂/兼容测试 8 例）；阶段 6 一项（`APIKeyInfo` 增加 `tenant`/`allowed_tools`，默认值兼容旧数据）。
+- **测试数量**：128 例（72 基线 + 56 新增）；本次会话复验 **127 通过 / 1 跳过（langchain agent 组）/ 0 失败**。
+- **最新验证结果**（2026-08-25，本沙箱）：`ruff check` + `ruff format --check` 全过（70 文件）；`pytest` 全量 127 通过 + 1 跳过，**零失败**——含 stdio/http 子进程集成测试。本次沙箱下 `pytest` 必须在 `danger-full-access` 权限下运行：默认/workspace-write 模式下 pytest 的临时目录清理被沙箱文件过滤器拦截（WinError 5，目录进入 delete-pending 后连 readdir 都失败），且跨会话遗留的 `.tmp/pytest-of-Night7` 目录不可删写（历史会话绕行方式：`--basetemp` 指向全新目录）。
+- **已知问题**：Key 明文存储；限流单进程、桶无淘汰；无重连/总超时（阶段 7）；多租户/白名单仅完成 Schema 层（阶段 6 进行中）。
+- **环境问题**：DSH 沙箱（子进程/写限制 + 受限 python 进程 TCP 连接偶发 502——本次已恢复，历史为环境性；pytest 临时目录清理被拦，需 danger-full-access 复验）；uv 缓存损坏用 `UV_CACHE_DIR` 绕开；pyenv PATH 抢占（启动网关须 PATH 前置 `.venv\Scripts`）；本机 git ssl 配置；360 拦截子进程（见第 13 节）。
+- **下一步**：阶段 6 任务 2（SQLite Key 存储与轻量迁移）：`SQLiteAPIKeyStore` 增加 `tenant TEXT NOT NULL DEFAULT 'default'` 与 `allowed_tools TEXT`（JSON 字符串）两列；`init` 时用 `PRAGMA table_info(api_keys)` 检查缺列并幂等 `ALTER TABLE`；读写转换保持兼容。
+- **最后更新时间**：2026-08-25。
 
 ## 17. 下一步建议
 
 1. 新对话直接用第 0 节开场提示词开始。
-2. 第一个执行任务：阶段 6 任务 1（`app/schemas/auth.py` 的 `APIKeyInfo` 增加 `tenant: str = "default"` 与 `allowed_tools: list[str] | None = None`，随后 SQLite Key 存储迁移（PRAGMA 查列 + 幂等 ALTER TABLE）与 `registry.list_tools_for(key)`）。
+2. 第一个执行任务：阶段 6 任务 2（`app/core/security.py` 的 `SQLiteAPIKeyStore`：新增 `tenant TEXT NOT NULL DEFAULT 'default'` 与 `allowed_tools TEXT`（JSON 字符串）列；`init` 时 `PRAGMA table_info(api_keys)` 查缺列 + 幂等 `ALTER TABLE`；`get()` 读写转换保持兼容；随后任务 3 `registry.list_tools_for(key)`）。
 3. 每个对话结束前必须：更新第 16 节 + git commit + 明确写出「下一步」。
 4. 遇到与本文档矛盾的事实，以代码为准，并把矛盾记录进第 16 节「已知问题」。
