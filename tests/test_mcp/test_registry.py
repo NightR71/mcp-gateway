@@ -11,7 +11,8 @@ import pytest
 
 from app.config import MCPServerConfig
 from app.mcp.registry import ToolRegistry
-from app.mcp.schemas import UnknownToolError
+from app.mcp.schemas import ToolNotAllowedError, UnknownToolError
+from app.schemas.auth import APIKeyInfo
 
 DEMO_SERVER = Path(__file__).resolve().parents[2] / "servers" / "demo_sql_server" / "server.py"
 
@@ -75,3 +76,24 @@ async def test_failed_server_does_not_block() -> None:
     assert status[0].connected is False
     assert status[0].error
     await r.close()
+
+
+async def test_list_tools_for_key_whitelist(registry: ToolRegistry) -> None:
+    """阶段 6：按 Key 过滤工具；白名单外调用抛 ToolNotAllowedError。"""
+    full_key = APIKeyInfo(key="full", name="full")
+    assert len(registry.list_tools_for(full_key)) == 4  # allowed_tools=None = 全量
+
+    limited = APIKeyInfo(key="limited", name="limited", allowed_tools=["demo_sql__ask"])
+    visible = registry.list_tools_for(limited)
+    assert [t.name for t in visible] == ["demo_sql__ask"]
+
+    # 可见性校验：白名单外真实工具 → ToolNotAllowedError；不存在 → UnknownToolError
+    with pytest.raises(ToolNotAllowedError):
+        registry.get_tool_for(limited, "demo_sql__run_sql")
+    with pytest.raises(UnknownToolError):
+        registry.get_tool_for(limited, "demo_sql__not_exist")
+    assert registry.get_tool_for(limited, "demo_sql__ask").name == "demo_sql__ask"
+
+    # server_status 按 Key 统计可见工具数；无 Key 时保持全量统计
+    assert registry.server_status(limited)[0].tool_count == 1
+    assert registry.server_status()[0].tool_count == 4

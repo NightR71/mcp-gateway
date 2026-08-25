@@ -550,7 +550,7 @@ Interactive UI（/ui 工作台，链路时间线可视化）
     * `allowed_tools: list[str] | None = None`。
   * `None = 全部`，兼容旧数据。
 
-* [ ] **完成 SQLite Key 存储与轻量迁移**
+* [x] **完成 SQLite Key 存储与轻量迁移**
 
   * `app/core/security.py`：
 
@@ -560,13 +560,13 @@ Interactive UI（/ui 工作台，链路时间线可视化）
   * `init` 时使用 `PRAGMA table_info(api_keys)` 检查缺列并幂等 `ALTER TABLE`。
   * 读写转换保持兼容。
 
-* [ ] **完成 Registry 的按 Key 工具可见性**
+* [x] **完成 Registry 的按 Key 工具可见性**
 
   * 保持 `get_current_key` 不变。
   * 新增按 Key 过滤工具的能力。
   * 推荐由 registry 提供 `list_tools_for(key)`，避免路由层直接实现业务逻辑。
 
-* [ ] **完成工具 API 的白名单检查**
+* [x] **完成工具 API 的白名单检查**
 
   * `GET /tools` 使用 `list_tools_for(api_key)`。
   * `call_tool` 先检查工具可见性。
@@ -574,7 +574,7 @@ Interactive UI（/ui 工作台，链路时间线可视化）
   * 真不存在的工具继续返回 404。
   * `/servers` 的 tool_count 改为按当前 Key 的可见数量。
 
-* [ ] **完成演示 Key 配置**
+* [x] **完成演示 Key 配置**
 
   * `config/gateway.yaml`：
 
@@ -582,7 +582,7 @@ Interactive UI（/ui 工作台，链路时间线可视化）
     * 新增 `limited-tools-key`，`tenant: demo`，`allowed_tools: ["demo_sql__ask"]`，60 次/分钟。
   * YAML 中添加用途说明。
 
-* [ ] **完成工具权限 API 测试**
+* [x] **完成工具权限 API 测试**
 
   * `tests/test_api/test_tools.py` 至少覆盖：
 
@@ -591,7 +591,7 @@ Interactive UI（/ui 工作台，链路时间线可视化）
     * 调 `demo_sql__ask` 返回 200；
     * 全量 Key 行为不变。
 
-* [ ] **完成 Key Schema 与迁移测试**
+* [x] **完成 Key Schema 与迁移测试**
 
   * `tests/test_core/test_security.py` 至少覆盖：
 
@@ -777,15 +777,15 @@ Interactive UI（/ui 工作台，链路时间线可视化）
 
 ## 16. 当前状态（当前进度）
 
-- **当前阶段**：二阶段**阶段 6（最小多租户 + 工具白名单）进行中**；基线 = 一阶段开发 + 二阶段阶段 0–5。
-- **已完成阶段**：一阶段 阶段 0–4 + 5 第一点；二阶段 阶段 0（基线）、1（Semantic Tool Routing）、2（Agent 核心化）、3（Agent Workbench UI）、4（Streaming）、5（NL2SQL 双引擎）。
-- **正在进行**：阶段 6（任务 1 已完成，任务 2 待开始）。
-- **已完成任务（二阶段）**：阶段 0 三项；阶段 1 六项；阶段 2 六项；阶段 3 四项；阶段 4 七项；阶段 5 五项（`llm_translator.py`、Translator Protocol + 工厂、ask 双引擎接入 + 引擎标注、LLM Translator 测试 6 例、NL2SQL 工厂/兼容测试 8 例）；阶段 6 一项（`APIKeyInfo` 增加 `tenant`/`allowed_tools`，默认值兼容旧数据）。
-- **测试数量**：128 例（72 基线 + 56 新增）；本次会话复验 **127 通过 / 1 跳过（langchain agent 组）/ 0 失败**。
-- **最新验证结果**（2026-08-25，本沙箱）：`ruff check` + `ruff format --check` 全过（70 文件）；`pytest` 全量 127 通过 + 1 跳过，**零失败**——含 stdio/http 子进程集成测试。本次沙箱下 `pytest` 必须在 `danger-full-access` 权限下运行：默认/workspace-write 模式下 pytest 的临时目录清理被沙箱文件过滤器拦截（WinError 5，目录进入 delete-pending 后连 readdir 都失败），且跨会话遗留的 `.tmp/pytest-of-Night7` 目录不可删写（历史会话绕行方式：`--basetemp` 指向全新目录）。
-- **已知问题**：Key 明文存储；限流单进程、桶无淘汰；无重连/总超时（阶段 7）；多租户/白名单仅完成 Schema 层（阶段 6 进行中）。
+- **当前阶段**：二阶段**阶段 7（网关可靠性）待开始**；基线 = 一阶段开发 + 二阶段阶段 0–6。
+- **已完成阶段**：一阶段 阶段 0–4 + 5 第一点；二阶段 阶段 0（基线）、1（Semantic Tool Routing）、2（Agent 核心化）、3（Agent Workbench UI）、4（Streaming）、5（NL2SQL 双引擎）、6（最小多租户 + 工具白名单）。
+- **正在进行**：阶段 7（任务 1 待开始）。
+- **已完成任务（二阶段）**：阶段 0 三项；阶段 1 六项；阶段 2 六项；阶段 3 四项；阶段 4 七项；阶段 5 五项（`llm_translator.py`、Translator Protocol + 工厂、ask 双引擎接入 + 引擎标注、LLM Translator 测试 6 例、NL2SQL 工厂/兼容测试 8 例）；阶段 6 七项（任务 1：`APIKeyInfo` 增加 `tenant`/`allowed_tools`，默认值兼容旧数据；任务 2：`SQLiteAPIKeyStore` 增列 + `PRAGMA table_info` 幂等 `ALTER TABLE` 迁移 + allowed_tools JSON 读写转换；任务 3：registry `list_tools_for`/`get_tool_for`（403 用 `ToolNotAllowedError`）+ `server_status(key)`；任务 4：`/tools`、`call`、`call/stream`、`/servers` 白名单接入（403/404 分支，流式端点防绕过）；任务 5：`config/gateway.yaml` 演示 Key（tenant: demo + limited-tools-key 白名单演示）；任务 6：工具权限 API 测试 6 例 + registry 白名单测试 1 例 + `/servers` tool_count 测试 1 例；任务 7：Key Schema 与迁移测试 2 例）。
+- **测试数量**：138 例（72 基线 + 66 新增）；本次会话复验 **137 通过 / 1 跳过（langchain agent 组）/ 0 失败**。
+- **最新验证结果**（2026-08-25，本沙箱，阶段 6 完成后）：`ruff check` + `ruff format --check` 全过（70 文件）；`pytest` 全量 137 通过 + 1 跳过，**零失败**——含 stdio/http 子进程集成测试。本次沙箱下 `pytest` 必须在 `danger-full-access` 权限下运行：默认/workspace-write 模式下 pytest 的临时目录清理被沙箱文件过滤器拦截（WinError 5，目录进入 delete-pending 后连 readdir 都失败），且跨会话遗留的 `.tmp/pytest-of-Night7` 目录不可删写（历史会话绕行方式：`--basetemp` 指向全新目录）。
+- **已知问题**：Key 明文存储；限流单进程、桶无淘汰；无重连/总超时/错误分类（阶段 7 待做）；多租户/白名单已完整落地（Schema + 存储迁移 + registry 可见性 + API 403，阶段 6 完成）。
 - **环境问题**：DSH 沙箱（子进程/写限制 + 受限 python 进程 TCP 连接偶发 502——本次已恢复，历史为环境性；pytest 临时目录清理被拦，需 danger-full-access 复验）；uv 缓存损坏用 `UV_CACHE_DIR` 绕开；pyenv PATH 抢占（启动网关须 PATH 前置 `.venv\Scripts`）；本机 git ssl 配置；360 拦截子进程（见第 13 节）。
-- **下一步**：阶段 6 任务 2（SQLite Key 存储与轻量迁移）：`SQLiteAPIKeyStore` 增加 `tenant TEXT NOT NULL DEFAULT 'default'` 与 `allowed_tools TEXT`（JSON 字符串）两列；`init` 时用 `PRAGMA table_info(api_keys)` 检查缺列并幂等 `ALTER TABLE`；读写转换保持兼容。
+- **下一步**：阶段 7 任务 1（Registry 的失败状态与自动重连机制）：`ToolRegistry.__init__` 扩展 `client_factory=create_client, retry_base=2.0, retry_max=60.0`（默认值不变）；`_errors` 升级为 `_failures: dict[str, FailureState]`（error/attempts/next_retry_at）；`ServerStatus` 增加 `retry_attempts`/`next_retry_at` 默认字段；`connect_all()` 完成后启动 `_retry_task` 指数退避重试；新增 `mark_failed(name, error)`（移除失效 client 与工具）；`close()` 取消重试任务。
 - **最后更新时间**：2026-08-25。
 
 ## 17. 下一步建议

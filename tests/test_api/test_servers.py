@@ -23,3 +23,13 @@ async def test_list_servers_unauthorized(gateway_client: AsyncClient) -> None:
     assert (await gateway_client.get("/servers")).status_code == 401
     resp = await gateway_client.get("/servers", headers={"X-API-Key": "wrong-key"})
     assert resp.status_code == 401
+
+
+async def test_server_tool_count_respects_whitelist(gateway_client: AsyncClient) -> None:
+    """阶段 6：/servers 的 tool_count 按当前 Key 可见的工具数统计。"""
+    resp = await gateway_client.get("/servers", headers={"X-API-Key": "whitelist-key"})
+    assert resp.status_code == 200
+    servers = resp.json()
+    assert len(servers) == 1
+    assert servers[0]["name"] == "demo_sql"
+    assert servers[0]["tool_count"] == 1  # 白名单 Key 只见 demo_sql__ask
