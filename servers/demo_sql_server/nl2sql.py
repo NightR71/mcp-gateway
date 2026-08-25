@@ -1,11 +1,15 @@
-"""规则模板版 NL2SQL：把中文自然语言问题映射为只读 SQL。
+"""NL2SQL 双引擎（阶段 5）：规则模板兜底 + 可选 LLM 增强。
 
-MVP 采用「正则关键词 → SQL 模板」的规则引擎：
-- 离线、确定性、零外部依赖，本地 / CI / Docker 环境均可直接演示；
-- 引擎与 MCP 工具层解耦，未来可将本模块替换为 LLM 实现（函数签名不变）。
+- `question_to_sql()`：规则引擎（原样保留，一阶段行为不变）；
+- Translator Protocol + `create_translator(mode)`：rule / llm / hybrid 三模式；
+  hybrid 规则命中优先，未命中才降级 LLM；无 LLM 配置时自动退化为 rule。
 """
 
+from __future__ import annotations
+
 import re
+from dataclasses import dataclass
+from typing import Protocol
 
 # (匹配正则, SQL 模板)，按声明顺序优先命中
 _RULES: tuple[tuple[str, str], ...] = (
@@ -99,3 +103,72 @@ def question_to_sql(question: str) -> str | None:
         if re.search(pattern, question):
             return sql
     return None
+
+
+# ---------- 阶段 5：双引擎抽象 ----------
+
+
+@dataclass
+class Translation:
+    """一次翻译结果：SQL + 所用引擎（rule / llm / none）。"""
+
+    sql: str | None
+    engine: str = "none"  # "rule" | "llm" | "none"
+
+
+# 引擎 code → 展示名（结果文本「引擎：规则 / LLM」）
+ENGINE_LABELS: dict[str, str] = {"rule": "规则", "llm": "LLM", "none": "无"}
+
+
+class Translator(Protocol):
+    """翻译器协议：rule / llm / hybrid 统一入口（接口与实现分离）。"""
+
+    async def translate(self, question: str, schema_text: str) -> Translation: ...
+
+
+class RuleTranslator:
+    """规则模板翻译器（离线确定性，一阶段行为）。"""
+
+    engine = "rule"
+
+    async def translate(self, question: str, schema_text: str) -> Translation:
+        sql = question_to_sql(question)
+        return Translation(sql=sql, engine=self.engine if sql else "none")
+
+
+class HybridTranslator:
+    """规则优先，未命中才降级 LLM（规则兜底、LLM 增强）。"""
+
+    def __init__(self, llm: Translator) -> None:
+        self._llm = llm
+
+    async def translate(self, question: str, schema_text: str) -> Translation:
+        sql = question_to_sql(question)
+        if sql is not None:
+            return Translation(sql=sql, engine="rule")
+        return await self._llm.translate(question, schema_text)
+
+
+def create_translator(mode: str = "rule", *, llm: Translator | None = None) -> Translator:
+    """按模式构造翻译器。
+
+    - rule：规则引擎（默认，行为与一阶段完全一致）
+    - llm：必须提供 llm，否则 ValueError
+    - hybrid：规则优先；未提供 llm 时自动退化为 rule（无 LLM 配置即降级）
+    """
+    if mode == "llm":
+        if llm is None:
+            raise ValueError("llm 模式必须提供 llm 翻译器")
+        return llm
+    if mode == "hybrid":
+        if llm is None:
+            return RuleTranslator()  # 无 LLM 配置自动退化为 rule
+        return HybridTranslator(llm)
+    return RuleTranslator()
+
+
+async def translate(
+    question: str, schema_text: str = "", *, mode: str = "rule", llm: Translator | None = None
+) -> Translation:
+    """模块级便捷入口：按模式翻译一次（供工具层直接调用）。"""
+    return await create_translator(mode, llm=llm).translate(question, schema_text)

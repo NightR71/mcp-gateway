@@ -477,7 +477,7 @@ Interactive UI（/ui 工作台，链路时间线可视化）
 
 步骤：
 
-* [ ] **完成 `LLMTranslator`**
+* [x] **完成 `LLMTranslator`**
 
   * 新建 `servers/demo_sql_server/llm_translator.py`。
   * `LLMTranslator(base_url, api_key, model, timeout=30.0)`。
@@ -485,18 +485,18 @@ Interactive UI（/ui 工作台，链路时间线可视化）
   * system prompt 固定只读 SELECT 约束、表结构和只输出 SQL 的要求。
   * 任何异常、超时、空响应返回 `None`，规则路径绝不因 LLM 挂掉。
 
-* [ ] **完成 NL2SQL Translator 抽象与工厂**
+* [x] **完成 NL2SQL Translator 抽象与工厂**
 
-  * `servers/demo_sql_server/nl2sql.py` 新增 `Translator` Protocol。
+  * `servers/demo_sql_server/nl2sql.py` 新增 `Translator` Protocol（`translate(question, schema_text) -> Translation`，`Translation(sql, engine)` 携带引擎标注）。
   * `create_translator(mode, *, llm=None)` 支持：
 
     * `rule`
     * `llm`
     * `hybrid`
   * `hybrid` 模式规则命中优先，未命中才降级 LLM。
-  * 保留原 `question_to_sql(question) -> str | None` 签名不变，新增 `translate()`。
+  * 保留原 `question_to_sql(question) -> str | None` 签名不变，新增模块级 `translate()` 便捷入口与 `ENGINE_LABELS` 展示名映射（规则 / LLM）。
 
-* [ ] **完成 demo_sql_server 的双引擎接入**
+* [x] **完成 demo_sql_server 的双引擎接入**
 
   * `server.py` 的 `ask` 工具改走 `translate()`。
   * 支持：
@@ -508,16 +508,16 @@ Interactive UI（/ui 工作台，链路时间线可视化）
   * 结果文本显示「引擎：规则 / LLM」。
   * 无 LLM 配置时 hybrid 自动退化为 rule。
 
-* [ ] **完成 LLM Translator 测试**
+* [x] **完成 LLM Translator 测试**
 
   * `tests/test_servers/test_llm_translator.py` 至少覆盖：
 
-    * 命中返回 SQL；
+    * 命中返回 SQL（含 Markdown 代码块清洗）；
     * prompt 含表结构关键词；
     * 异常/非 200 返回 None；
     * 未装 httpx 时工厂降级。
 
-* [ ] **完成 NL2SQL 工厂与兼容测试**
+* [x] **完成 NL2SQL 工厂与兼容测试**
 
   * `tests/test_servers/test_nl2sql.py` 补充：
 
@@ -777,20 +777,20 @@ Interactive UI（/ui 工作台，链路时间线可视化）
 
 ## 16. 当前状态（当前进度）
 
-- **当前阶段**：二阶段**阶段 4（Streaming）已完成**——核心闭环（阶段 1–4）全部完成；基线 = 一阶段开发 + 二阶段阶段 0/1/2/3/4。
-- **已完成阶段**：一阶段 阶段 0–4 + 5 第一点；二阶段 阶段 0（基线）、1（Semantic Tool Routing）、2（Agent 核心化）、3（Agent Workbench UI）、4（Streaming）。
-- **正在进行**：无（阶段 5 待开始）。
-- **已完成任务（二阶段）**：阶段 0 三项；阶段 1 六项；阶段 2 六项；阶段 3 四项；阶段 4 七项（Model 流式、runner.run_stream、`/agent/run/stream`、`/tools/{name}/call/stream`、UI 流式渲染、流式测试 10 例、本地与兼容性验收）。
-- **测试数量**：114 例（72 基线 + 42 新增）；沙箱升级权限复验 112 通过 / 1 环境性失败 / 1 跳过。
-- **最新验证结果**（2026-08-24，本沙箱）：`ruff check` + `ruff format --check` 全过（68 文件）；`pytest` 112 通过，唯一失败 `tests/test_mcp/test_http_transport.py`（沙箱 TCP 拦截，纯环境性）；运行验收：`/agent/run/stream` 返回 `text/event-stream`、事件序列 `step×4 → token×N → step(final) → done`，`/tools/{name}/call/stream` 为 `start → result → done`，同步 `/agent/run`、`/tools` 行为不变。
-- **已知问题**：SSE 传输无测试（阶段 7 补）；Key 明文存储；限流单进程、桶无淘汰；无重连/总超时（阶段 7）；NL2SQL 纯规则（阶段 5）；无多租户/白名单（阶段 6）。
-- **环境问题**：DSH 沙箱（子进程/写限制 + 受限 python 进程 TCP 连接被拦截返回 502，升级权限复验可排除除 http 传输测试外的全部）；uv 缓存损坏用 `UV_CACHE_DIR` 绕开；pyenv PATH 抢占（启动网关须 PATH 前置 `.venv\Scripts`）；本机 git ssl 配置；360 拦截子进程（见第 13 节）。
-- **下一步**：执行阶段 5（NL2SQL 双引擎，独立）：`servers/demo_sql_server/llm_translator.py`（OpenAI 兼容 chat/completions 生成 SQL，任何异常返回 None 规则兜底）+ `nl2sql.py` Translator Protocol 与 `create_translator(mode)` 工厂（rule/llm/hybrid）+ `ask` 工具双引擎标注 + 测试（`tests/test_servers/test_llm_translator.py` + `test_nl2sql.py` 补充）。
+- **当前阶段**：二阶段**阶段 5（NL2SQL 双引擎）已完成**；基线 = 一阶段开发 + 二阶段阶段 0–5。
+- **已完成阶段**：一阶段 阶段 0–4 + 5 第一点；二阶段 阶段 0（基线）、1（Semantic Tool Routing）、2（Agent 核心化）、3（Agent Workbench UI）、4（Streaming）、5（NL2SQL 双引擎）。
+- **正在进行**：无（阶段 6 待开始）。
+- **已完成任务（二阶段）**：阶段 0 三项；阶段 1 六项；阶段 2 六项；阶段 3 四项；阶段 4 七项；阶段 5 五项（`llm_translator.py`、Translator Protocol + 工厂、ask 双引擎接入 + 引擎标注、LLM Translator 测试 6 例、NL2SQL 工厂/兼容测试 8 例）。
+- **测试数量**：128 例（72 基线 + 56 新增）；沙箱升级权限复验 **127 通过 / 1 跳过 / 0 失败**（http 传输测试本次环境恢复通过）。
+- **最新验证结果**（2026-08-24，本沙箱）：`ruff check` + `ruff format --check` 全过（70 文件）；`pytest` 全量 127 通过 + 1 跳过（langchain agent 组），**零失败**——含此前环境性失败的 `test_http_transport`（本次沙箱环境恢复后连续复验通过）；运行验收：hybrid 模式 + LLM 不可达时规则命中正常出 SQL 且标注「引擎：规则」，规则未命中走示例兜底不崩溃（LLM 失败返回 None 由规则路径兜底）。
+- **已知问题**：Key 明文存储；限流单进程、桶无淘汰；无重连/总超时（阶段 7）；无多租户/白名单（阶段 6）。
+- **环境问题**：DSH 沙箱（子进程/写限制 + 受限 python 进程 TCP 连接偶发 502——本次已恢复，历史为环境性）；uv 缓存损坏用 `UV_CACHE_DIR` 绕开；pyenv PATH 抢占（启动网关须 PATH 前置 `.venv\Scripts`）；本机 git ssl 配置；360 拦截子进程（见第 13 节）。
+- **下一步**：执行阶段 6（最小多租户 + 工具白名单，独立）：`APIKeyInfo` 增加 `tenant`/`allowed_tools`（None=全部）+ SQLite 迁移（PRAGMA 查列 + 幂等 ALTER）+ registry `list_tools_for(key)` + `GET /tools`/`call` 白名单检查（不可见 403、不存在 404）+ `/servers` tool_count 按可见数 + `limited-tools-key` 演示配置 + 权限 API 测试与迁移测试。
 - **最后更新时间**：2026-08-24。
 
 ## 17. 下一步建议
 
 1. 新对话直接用第 0 节开场提示词开始。
-2. 第一个执行任务：阶段 5 任务 1（新建 `servers/demo_sql_server/llm_translator.py`：OpenAI 兼容 `chat/completions` 生成 SQL，system prompt 固定只读 SELECT 约束，任何异常/超时/空响应返回 None），随后 `nl2sql.py` 的 Translator Protocol 与 `create_translator()` 工厂（rule/llm/hybrid）。
+2. 第一个执行任务：阶段 6 任务 1（`app/schemas/auth.py` 的 `APIKeyInfo` 增加 `tenant: str = "default"` 与 `allowed_tools: list[str] | None = None`，随后 SQLite Key 存储迁移（PRAGMA 查列 + 幂等 ALTER TABLE）与 `registry.list_tools_for(key)`）。
 3. 每个对话结束前必须：更新第 16 节 + git commit + 明确写出「下一步」。
 4. 遇到与本文档矛盾的事实，以代码为准，并把矛盾记录进第 16 节「已知问题」。

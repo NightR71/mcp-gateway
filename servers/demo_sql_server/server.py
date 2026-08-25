@@ -6,6 +6,7 @@
 - run_sql     直接执行只读 SQL（强制 SELECT/WITH 单语句校验）
 - list_tables 查看演示库表结构
 - echo        链路调试用回显
+阶段 5：NL2SQL 双引擎（规则兜底 + 可选 LLM）——未配 LLM 时行为与阶段 4 完全一致。
 
 独立运行方式：
     python servers/demo_sql_server/server.py            # stdio（供网关拉起）
@@ -16,6 +17,10 @@
     DEMO_SQL_HOST       http 模式监听地址（默认 0.0.0.0）
     DEMO_SQL_PORT       http 模式端口（默认 9001）
     DEMO_SQL_DB_PATH    SQLite 路径（默认 data/demo_sql.db）
+    DEMO_SQL_NL2SQL_MODE rule（默认）/ llm / hybrid —— LLM 相关模式
+    DEMO_SQL_LLM_BASE_URL OpenAI 兼容端点（如 https://api.openai.com/v1）
+    DEMO_SQL_LLM_API_KEY  LLM API Key（仅环境变量，绝不落库）
+    DEMO_SQL_LLM_MODEL    模型名（默认 gpt-4o-mini）
 
 注意：本文件同时支持两种加载方式：
 - 脚本方式运行（python servers/demo_sql_server/server.py，sys.path[0] 为本目录），
@@ -33,16 +38,19 @@ from mcp.server.mcpserver import MCPServer
 
 try:  # 包导入（网关进程内加载）
     from .db import execute_readonly, get_schema, init_db
-    from .nl2sql import SUPPORTED_EXAMPLES, question_to_sql
+    from .llm_translator import LLMTranslator
+    from .nl2sql import ENGINE_LABELS, SUPPORTED_EXAMPLES, Translator, create_translator
 except ImportError:  # 脚本方式运行（stdio 子进程 / docker）
     from db import execute_readonly, get_schema, init_db
-    from nl2sql import SUPPORTED_EXAMPLES, question_to_sql
+    from llm_translator import LLMTranslator
+    from nl2sql import ENGINE_LABELS, SUPPORTED_EXAMPLES, Translator, create_translator
 
 DB_PATH = os.getenv("DEMO_SQL_DB_PATH", "data/demo_sql.db")
 
 server = MCPServer("demo_sql_server")
 
 _db_ready = False
+_translator: Translator | None = None
 
 
 def _ensure_db() -> None:
@@ -89,15 +97,45 @@ async def ask(question: str) -> str:
     未命中规则时会返回支持的问题示例列表。
     """
     _ensure_db()
-    sql = question_to_sql(question)
-    if sql is None:
+    translation = await _get_translator().translate(question, get_schema(DB_PATH))
+    if translation.sql is None:
         examples = "\n".join(f"- {e}" for e in SUPPORTED_EXAMPLES)
         return "暂时无法理解这个问题，可以试试这样问：\n" + examples
-    columns, rows, truncated = execute_readonly(DB_PATH, sql)
-    result = f"生成的 SQL：\n```sql\n{sql}\n```\n\n查询结果：\n" + _to_markdown_table(columns, rows)
+    columns, rows, truncated = execute_readonly(DB_PATH, translation.sql)
+    engine_label = ENGINE_LABELS.get(translation.engine, translation.engine)
+    result = (
+        f"生成的 SQL（引擎：{engine_label}）：\n```sql\n{translation.sql}\n```\n\n"
+        "查询结果：\n" + _to_markdown_table(columns, rows)
+    )
     if truncated:
         result += "\n\n（结果行数过多，已截断）"
     return result
+
+
+def _get_translator() -> Translator:
+    """按环境变量惰性构造 NL2SQL 翻译器（进程级缓存）。
+
+    - DEMO_SQL_NL2SQL_MODE=rule（默认）/ llm / hybrid
+    - llm/hybrid 模式缺 LLM 配置（URL/Key）或构造失败时自动退化为 rule
+      ——未配 LLM 时行为与阶段 4 完全一致。
+    """
+    global _translator
+    if _translator is None:
+        mode = os.getenv("DEMO_SQL_NL2SQL_MODE", "rule")
+        llm: Translator | None = None
+        if mode in ("llm", "hybrid"):
+            base_url = os.getenv("DEMO_SQL_LLM_BASE_URL", "")
+            api_key = os.getenv("DEMO_SQL_LLM_API_KEY", "")
+            model = os.getenv("DEMO_SQL_LLM_MODEL", "gpt-4o-mini")
+            if base_url and api_key:
+                try:
+                    llm = LLMTranslator(base_url, api_key, model)
+                except Exception:
+                    llm = None  # 构造失败（如缺 httpx）→ 退化规则引擎
+        if mode in ("llm", "hybrid") and llm is None:
+            mode = "rule"
+        _translator = create_translator(mode, llm=llm)
+    return _translator
 
 
 @server.tool()
