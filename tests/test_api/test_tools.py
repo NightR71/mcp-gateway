@@ -211,3 +211,49 @@ async def test_full_key_behavior_unchanged(gateway_client: AsyncClient) -> None:
         json={"arguments": {"sql": "SELECT 1"}},
     )
     assert resp.status_code == 200
+
+
+# ---------- 阶段 7：调用总超时（502 明确提示） ----------
+
+
+async def test_call_tool_timeout_returns_502(gateway_client: AsyncClient, monkeypatch) -> None:
+    """registry 抛 ToolCallTimeoutError → 502 + 「工具调用超时（>Ns）」明确提示。"""
+    from app.main import app
+    from app.mcp.schemas import ToolCallTimeoutError
+
+    registry = app.state.registry
+
+    async def fake_call_tool(name: str, arguments: dict) -> None:
+        raise ToolCallTimeoutError(name, 30.0)
+
+    monkeypatch.setattr(registry, "call_tool", fake_call_tool)
+    resp = await gateway_client.post("/tools/demo_sql__ask/call", headers=AUTH_HEADERS, json={})
+    assert resp.status_code == 502
+    assert "工具调用超时（>30s）" in resp.json()["detail"]
+
+
+async def test_call_tool_stream_timeout_error_event(
+    gateway_client: AsyncClient, monkeypatch
+) -> None:
+    """流式端点：超时以 error 事件呈现，消息含明确超时提示（start → error → done）。"""
+    from app.main import app
+    from app.mcp.schemas import ToolCallTimeoutError
+
+    registry = app.state.registry
+
+    async def fake_call_tool(name: str, arguments: dict) -> None:
+        raise ToolCallTimeoutError(name, 30.0)
+
+    monkeypatch.setattr(registry, "call_tool", fake_call_tool)
+    async with gateway_client.stream(
+        "POST", "/tools/demo_sql__ask/call/stream", headers=AUTH_HEADERS, json={}
+    ) as resp:
+        assert resp.status_code == 200
+        body = ""
+        async for chunk in resp.aiter_text():
+            body += chunk
+
+    frames = [f for f in body.split("\n\n") if f.strip()]
+    names = [f.split("\n")[0].replace("event: ", "") for f in frames]
+    assert names == ["start", "error", "done"]
+    assert "工具调用超时" in body

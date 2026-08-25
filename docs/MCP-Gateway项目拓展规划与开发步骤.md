@@ -626,7 +626,7 @@ Interactive UI（/ui 工作台，链路时间线可视化）
     * 失败 server 按指数退避自动重试。
     * 新增 `mark_failed(name, error)`，移除失效 client 与工具并进入 failure 状态。
 
-* [ ] **完成 Tool Call 总超时与错误分类**
+* [x] **完成 Tool Call 总超时与错误分类**
 
   * `registry.call_tool()` 使用 `asyncio.timeout(tool_call_timeout)`。
   * 新增 `classify_error(exc)`：
@@ -638,13 +638,13 @@ Interactive UI（/ui 工作台，链路时间线可视化）
   * timeout 记录 exception 指标并抛出 `ToolCallTimeoutError`。
   * `close()` 负责取消 `_retry_task`。
 
-* [ ] **完成工具调用超时 API 行为**
+* [x] **完成工具调用超时 API 行为**
 
   * `app/api/routes/tools.py` 捕获 `ToolCallTimeoutError`。
   * 返回 502，并明确提示「工具调用超时（>Ns）」。
   * 其他错误行为保持不变。
 
-* [ ] **完成 Registry 恢复机制测试**
+* [x] **完成 Registry 恢复机制测试**
 
   * 新建 `tests/test_mcp/test_registry_recovery.py`，至少覆盖：
 
@@ -777,20 +777,20 @@ Interactive UI（/ui 工作台，链路时间线可视化）
 
 ## 16. 当前状态（当前进度）
 
-- **当前阶段**：二阶段**阶段 7（网关可靠性）进行中**——任务 1（断线自愈重连）已完成，任务 2 待开始；基线 = 一阶段开发 + 二阶段阶段 0–6。
+- **当前阶段**：二阶段**阶段 7（网关可靠性）进行中**——任务 1–4 已完成，任务 5 待开始；基线 = 一阶段开发 + 二阶段阶段 0–6。
 - **已完成阶段**：一阶段 阶段 0–4 + 5 第一点；二阶段 阶段 0（基线）、1（Semantic Tool Routing）、2（Agent 核心化）、3（Agent Workbench UI）、4（Streaming）、5（NL2SQL 双引擎）、6（最小多租户 + 工具白名单）。
-- **正在进行**：阶段 7（任务 2「Tool Call 总超时与错误分类」待开始）。
-- **已完成任务（二阶段）**：阶段 0 三项；阶段 1 六项；阶段 2 六项；阶段 3 四项；阶段 4 七项；阶段 5 五项（`llm_translator.py`、Translator Protocol + 工厂、ask 双引擎接入 + 引擎标注、LLM Translator 测试 6 例、NL2SQL 工厂/兼容测试 8 例）；阶段 6 七项（任务 1：`APIKeyInfo` 增加 `tenant`/`allowed_tools`，默认值兼容旧数据；任务 2：`SQLiteAPIKeyStore` 增列 + `PRAGMA table_info` 幂等 `ALTER TABLE` 迁移 + allowed_tools JSON 读写转换；任务 3：registry `list_tools_for`/`get_tool_for`（403 用 `ToolNotAllowedError`）+ `server_status(key)`；任务 4：`/tools`、`call`、`call/stream`、`/servers` 白名单接入（403/404 分支，流式端点防绕过）；任务 5：`config/gateway.yaml` 演示 Key（tenant: demo + limited-tools-key 白名单演示）；任务 6：工具权限 API 测试 6 例 + registry 白名单测试 1 例 + `/servers` tool_count 测试 1 例；任务 7：Key Schema 与迁移测试 2 例）；阶段 7 任务 1（`FailureState`（error/attempts/next_retry_at）+ `__init__` 扩展 `client_factory=create_client`/`retry_base=2.0`/`retry_max=60.0`（默认值不变）+ `_errors`→`_failures` + 后台 `_retry_loop`（Event 唤醒 + 指数退避 sleep + 串行 `_retry_due`，重连成功自动恢复工具并清 failure）+ `mark_failed`（摘除失效 client 与工具）+ `retry_now()` 测试钩子 + `ServerStatus` 增 `retry_attempts`/`next_retry_at`（默认 0/None 兼容）+ `close()` 取消重试任务；测试 9 例：首连失败记录 / 退避间隔 2-4-8-16-32-60 封顶 / retry_now 恢复工具 / 后台循环短退避自动恢复 / 连续失败 attempts 递增 / mark_failed 摘除 / close 取消任务 / 正常 server 默认值 / ServerStatus 字段默认值）。
-- **测试数量**：147 例（上一会话 138 + 本次新增 9）；本次会话复验 **146 通过 / 1 跳过（langchain agent 组）/ 0 失败**。
-- **最新验证结果**（2026-08-25，本沙箱，阶段 7 任务 1 完成后）：`ruff check` + `ruff format --check` 全过（71 文件）；`pytest` 全量 146 通过 + 1 跳过，**零失败**——含 stdio/http 子进程集成测试与新增 `tests/test_mcp/test_registry_recovery.py` 9 例（fake client 工厂注入可控失败脚本，无子进程依赖）。pytest 仍需 danger-full-access + `--basetemp` 全新目录（见环境问题）。
-- **已知问题**：Key 明文存储；限流单进程、桶无淘汰；**调用总超时与错误分类（阶段 7 任务 2 待做）**；断线自动重连已落地（阶段 7 任务 1：指数退避 + 后台重试循环 + `retry_attempts`/`next_retry_at` 可见）；多租户/白名单已完整落地（Schema + 存储迁移 + registry 可见性 + API 403，阶段 6 完成）。
+- **正在进行**：阶段 7（任务 5「SSE Transport 测试缺口」待开始）。
+- **已完成任务（二阶段）**：阶段 0 三项；阶段 1 六项；阶段 2 六项；阶段 3 四项；阶段 4 七项；阶段 5 五项（`llm_translator.py`、Translator Protocol + 工厂、ask 双引擎接入 + 引擎标注、LLM Translator 测试 6 例、NL2SQL 工厂/兼容测试 8 例）；阶段 6 七项（任务 1：`APIKeyInfo` 增加 `tenant`/`allowed_tools`，默认值兼容旧数据；任务 2：`SQLiteAPIKeyStore` 增列 + `PRAGMA table_info` 幂等 `ALTER TABLE` 迁移 + allowed_tools JSON 读写转换；任务 3：registry `list_tools_for`/`get_tool_for`（403 用 `ToolNotAllowedError`）+ `server_status(key)`；任务 4：`/tools`、`call`、`call/stream`、`/servers` 白名单接入（403/404 分支，流式端点防绕过）；任务 5：`config/gateway.yaml` 演示 Key（tenant: demo + limited-tools-key 白名单演示）；任务 6：工具权限 API 测试 6 例 + registry 白名单测试 1 例 + `/servers` tool_count 测试 1 例；任务 7：Key Schema 与迁移测试 2 例）；阶段 7 任务 1（`FailureState`（error/attempts/next_retry_at）+ `__init__` 扩展 `client_factory=create_client`/`retry_base=2.0`/`retry_max=60.0`（默认值不变）+ `_errors`→`_failures` + 后台 `_retry_loop`（Event 唤醒 + 指数退避 sleep + 串行 `_retry_due`，重连成功自动恢复工具并清 failure）+ `mark_failed`（摘除失效 client 与工具）+ `retry_now()` 测试钩子 + `ServerStatus` 增 `retry_attempts`/`next_retry_at`（默认 0/None 兼容）+ `close()` 取消重试任务）；阶段 7 任务 2（`call_tool()` 用 `asyncio.timeout(tool_call_timeout)` 总超时 + 模块级 `classify_error(exc)`（TimeoutError→timeout、ConnectionError/RuntimeError/OSError→connection、其他→tool_error）+ connection 触发 `mark_failed` 自愈 + timeout 抛 `ToolCallTimeoutError`（ToolCallTimer 自动记 exception 指标））；阶段 7 任务 3（`tools.py` 捕获 `ToolCallTimeoutError` → 502「工具调用超时（>Ns）: {tool}」，流式端点 error 事件含明确提示，其他错误行为不变）；阶段 7 任务 4（`tests/test_mcp/test_registry_recovery.py` 12 例全部落地：任务 1 的 9 例 + 任务 2 的 3 例——classify 映射 / connection→mark_failed+摘工具 / timeout→ToolCallTimeoutError+exception 指标断言；API 层补 2 例：同步 502 明确提示、流式 start→error→done）。
+- **测试数量**：152 例（上一会话 147 + 本次新增 5）；本次会话复验 **151 通过 / 1 跳过（langchain agent 组）/ 0 失败**。
+- **最新验证结果**（2026-08-25，本沙箱，阶段 7 任务 2–4 完成后）：`ruff check` + `ruff format --check` 全过（71 文件）；`pytest` 全量 151 通过 + 1 跳过，**零失败**——含 stdio/http 子进程集成测试与 `test_registry_recovery.py` 12 例（fake client 注入失败/超时/连接错误脚本）+ `test_tools.py` 超时 502 分支。pytest 仍需 danger-full-access + `--basetemp` 全新目录（见环境问题）。
+- **已知问题**：Key 明文存储；限流单进程、桶无淘汰；**SSE 传输无测试（阶段 7 任务 5 待做）**；断线自愈（指数退避重连）、调用总超时、错误分类已落地（阶段 7 任务 1–3）；多租户/白名单已完整落地（Schema + 存储迁移 + registry 可见性 + API 403，阶段 6 完成）。
 - **环境问题**：DSH 沙箱（子进程/写限制 + 受限 python 进程 TCP 连接偶发 502——本次已恢复，历史为环境性；pytest 临时目录清理被拦，需 danger-full-access 复验）；uv 缓存损坏用 `UV_CACHE_DIR` 绕开；pyenv PATH 抢占（启动网关须 PATH 前置 `.venv\Scripts`）；本机 git ssl 配置；360 拦截子进程（见第 13 节）。
-- **下一步**：阶段 7 任务 2（Tool Call 总超时与错误分类）：`registry.call_tool()` 使用 `asyncio.timeout(tool_call_timeout)`；新增 `classify_error(exc)`（`TimeoutError` → timeout、`ConnectionError`/`RuntimeError`/`OSError` → connection、其他 → tool_error）；connection 异常触发 `mark_failed`（任务 1 已就绪）；timeout 记录 exception 指标并抛出 `ToolCallTimeoutError`（新异常）；随后任务 3 在 `app/api/routes/tools.py` 捕获该异常返回 502 明确提示「工具调用超时（>Ns）」。
+- **下一步**：阶段 7 任务 5（SSE Transport 测试缺口）：`tests/test_mcp/test_sse_transport.py` 至少 2 例。优先本地 SSE server 集成测试；若 SDK 2.0 拉起复杂度过高，可降级为 `sse_client` 上下文建立的最小冒烟测试（文档任务描述允许）。
 - **最后更新时间**：2026-08-25。
 
 ## 17. 下一步建议
 
 1. 新对话直接用第 0 节开场提示词开始。
-2. 第一个执行任务：阶段 7 任务 2（`app/mcp/registry.py` 的 `call_tool()`：`asyncio.timeout(tool_call_timeout)` 总超时 + `classify_error(exc)` 错误分类；connection 类异常触发任务 1 已实现的 `mark_failed`；timeout 抛 `ToolCallTimeoutError`；随后任务 3 在 `app/api/routes/tools.py` 捕获并返回 502「工具调用超时（>Ns）」）。
+2. 第一个执行任务：阶段 7 任务 5（SSE Transport 测试缺口）：新建 `tests/test_mcp/test_sse_transport.py`，优先本地 SSE server 集成测试；SDK 2.0 拉起复杂度过高时可降级为 `sse_client` 上下文最小冒烟测试（补齐文档 §2 表格中「SSE 无测试」的缺口）。
 3. 每个对话结束前必须：更新第 16 节 + git commit + 明确写出「下一步」。
 4. 遇到与本文档矛盾的事实，以代码为准，并把矛盾记录进第 16 节「已知问题」。

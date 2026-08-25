@@ -11,6 +11,7 @@ from app.core.logging import get_logger
 from app.mcp.schemas import (
     ToolCallRequest,
     ToolCallResult,
+    ToolCallTimeoutError,
     ToolInfo,
     ToolNotAllowedError,
     UnknownToolError,
@@ -48,6 +49,7 @@ async def call_tool(
     """按命名空间工具名路由到对应 MCP Server 调用。
 
     阶段 6：真实存在但不在 Key 白名单内的工具返回 403；不存在的仍 404。
+    阶段 7：总超时（registry 抛 ToolCallTimeoutError）返回 502 明确提示。
     """
     try:
         registry.get_tool_for(api_key, tool_name)  # 可见性预检（404 未知 / 403 白名单外）
@@ -57,6 +59,11 @@ async def call_tool(
     except ToolNotAllowedError:
         logger.warning("tool_not_allowed", tool=tool_name, caller=api_key.name)
         raise HTTPException(status_code=403, detail=f"无权调用工具: {tool_name}") from None
+    except ToolCallTimeoutError as exc:
+        logger.error("tool_call_timeout", tool=tool_name, caller=api_key.name, timeout=exc.timeout)
+        raise HTTPException(
+            status_code=502, detail=f"工具调用超时（>{exc.timeout:g}s）: {tool_name}"
+        ) from None
     except Exception as exc:
         logger.error("tool_call_failed", tool=tool_name, caller=api_key.name, error=str(exc))
         raise HTTPException(status_code=502, detail=f"工具调用失败: {exc}") from exc

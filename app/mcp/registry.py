@@ -24,6 +24,7 @@ from app.mcp.schemas import (
     NAMESPACE_SEPARATOR,
     ServerStatus,
     ToolCallResult,
+    ToolCallTimeoutError,
     ToolInfo,
     ToolNotAllowedError,
     UnknownToolError,
@@ -31,6 +32,22 @@ from app.mcp.schemas import (
 from app.schemas.auth import APIKeyInfo
 
 logger = get_logger(__name__)
+
+
+def classify_error(exc: Exception) -> str:
+    """工具调用异常分类（阶段 7）：timeout / connection / tool_error。
+
+    - `TimeoutError`（含 `asyncio.TimeoutError` 别名）→ timeout：总超时，
+      API 层返回 502 明确提示；
+    - `ConnectionError` / `RuntimeError` / `OSError` → connection：
+      连接类异常，触发 `mark_failed` 进入自动重连；
+    - 其他 → tool_error：工具/下游自身错误，不摘除连接。
+    """
+    if isinstance(exc, TimeoutError):
+        return "timeout"
+    if isinstance(exc, (ConnectionError, RuntimeError, OSError)):
+        return "connection"
+    return "tool_error"
 
 
 @dataclass
@@ -232,13 +249,36 @@ class ToolRegistry:
             raise UnknownToolError(namespaced_name) from None
 
     async def call_tool(self, namespaced_name: str, arguments: dict[str, Any]) -> ToolCallResult:
-        """按命名空间工具名路由到对应 server 调用（全程记录 Prometheus 指标）。"""
+        """按命名空间工具名路由到对应 server 调用（阶段 7：总超时 + 错误分类）。
+
+        错误语义（分类见 `classify_error`）：
+        - 总耗时超过 `tool_call_timeout` → `ToolCallTimeoutError`（API 层 502 明确提示）；
+        - 连接类异常（connection）→ `mark_failed` 摘除该 server 并进入自动重连（任务 1），
+          然后原样抛出；
+        - 其他异常（tool_error）原样抛出，不触发自愈。
+        指标：ToolCallTimer 在异常抛出时自动记录 status="exception"。
+        """
         tool = self.get_tool(namespaced_name)
         client = self._clients[tool.server]
         with ToolCallTimer(namespaced_name, tool.server) as timer:
-            result: mcp_types.CallToolResult = await client.call_tool(
-                tool.original_name, arguments, read_timeout=self._tool_call_timeout
-            )
+            try:
+                async with asyncio.timeout(self._tool_call_timeout):
+                    result: mcp_types.CallToolResult = await client.call_tool(
+                        tool.original_name, arguments, read_timeout=self._tool_call_timeout
+                    )
+            except Exception as exc:
+                category = classify_error(exc)
+                if category == "timeout":
+                    raise ToolCallTimeoutError(namespaced_name, self._tool_call_timeout) from exc
+                if category == "connection":
+                    self.mark_failed(tool.server, str(exc))
+                    logger.error(
+                        "mcp_server_call_failed_marked",
+                        server=tool.server,
+                        tool=namespaced_name,
+                        error=str(exc),
+                    )
+                raise
             if result.is_error:
                 timer.status = "error"
         return ToolCallResult(
