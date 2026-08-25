@@ -37,13 +37,22 @@ logger = get_logger(__name__)
 def classify_error(exc: Exception) -> str:
     """工具调用异常分类（阶段 7）：timeout / connection / tool_error。
 
-    - `TimeoutError`（含 `asyncio.TimeoutError` 别名）→ timeout：总超时，
+    - `TimeoutError`（含 asyncio.TimeoutError 别名）→ timeout：总超时，
       API 层返回 502 明确提示；
-    - `ConnectionError` / `RuntimeError` / `OSError` → connection：
-      连接类异常，触发 `mark_failed` 进入自动重连；
+    - MCP SDK 2.x 传输中断（对端关闭连接 / stdio 子进程退出）统一抛
+      `MCPError(code=CONNECTION_CLOSED=-32000)` → connection：触发 mark_failed 自愈
+      （任务 6 实测：http 与 stdio 两种传输一致，仅靠 ConnectionError/OSError
+      判断会漏掉——SDK 把底层连接错误包装为 MCPError）；
+    - MCP SDK 2.x read timeout 抛 `MCPError(code=REQUEST_TIMEOUT=-32001)` → timeout；
+    - `ConnectionError` / `RuntimeError` / `OSError` → connection；
     - 其他 → tool_error：工具/下游自身错误，不摘除连接。
     """
     if isinstance(exc, TimeoutError):
+        return "timeout"
+    code = getattr(exc, "code", None)
+    if code == -32000:  # mcp.shared.exceptions.MCPError: Connection closed
+        return "connection"
+    if code == -32001:  # MCPError: Request ... timed out（SDK read timeout）
         return "timeout"
     if isinstance(exc, (ConnectionError, RuntimeError, OSError)):
         return "connection"
