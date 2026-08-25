@@ -6,6 +6,9 @@ gateway:
   host: 0.0.0.0
   port: 8000
   log_level: INFO
+  # 单次工具调用的总时长上限（秒，阶段 7）：超过即中止并返回 502「工具调用超时」；
+  # 与传输层 read_timeout 同时生效（read_timeout 内层先触发，总超时兜底）
+  tool_call_timeout: 30.0
 
 # API Key 鉴权配置
 # db_path：SQLite 存储路径（":memory:" 为纯内存，重启即丢）
