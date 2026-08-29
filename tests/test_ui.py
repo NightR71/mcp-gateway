@@ -29,6 +29,15 @@ async def test_ui_static_assets_served(client: AsyncClient) -> None:
     assert "background" in css.text
 
 
+async def test_ui_flow_panel_present(client: AsyncClient) -> None:
+    """UI 改版：右侧「运行流程」可视化面板随页面下发（SVG 舞台 + 控制按钮）。"""
+    resp = await client.get("/ui")
+    assert resp.status_code == 200
+    assert "flow-stage" in resp.text
+    assert "运行流程" in resp.text
+    assert "flow-dot" in resp.text
+
+
 async def test_root_redirects_to_ui(client: AsyncClient) -> None:
     """GET / 302/307 重定向到 /ui。"""
     resp = await client.get("/", follow_redirects=False)

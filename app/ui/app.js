@@ -1,9 +1,9 @@
 /* MCP Agent Workbench 前端逻辑（纯原生 JS，无框架无 CDN）。
  *
- * - 调用 POST /agent/run（阶段 3 同步版；阶段 4 将切到 /agent/run/stream）
- * - 按 AgentResponse.steps 的 kind 渲染时间线四种卡片
+ * - 左侧时间线：POST /agent/run/stream SSE 渲染（User → Agent → Gateway → Tool Result → 最终回答）
+ * - 富文本渲染：SQL 代码块高亮、Markdown 表格、列表（工具结果 / 最终回答）
+ * - 右侧「运行流程」面板：SVG 动画演示完整调用链路（由「发送」触发，与真实请求异步，支持暂停/重播）
  * - Key 只从页面输入框读、只放请求头，不落 localStorage
- * - 自检区：健康检查 / 列出工具直查 /health、/tools
  */
 
 "use strict";
@@ -20,14 +20,26 @@ const roundInfo = document.getElementById("round-info");
 const KIND_LABEL = {
   user: "User",
   tool_select: "Agent",
-  tool_call: "Agent",
+  tool_call: "Gateway",
   tool_result: "Tool Result",
   final: "Agent",
+  gateway: "Gateway",
+  agent: "Agent",
+};
+
+const KIND_CLASS = {
+  user: "user",
+  tool_select: "agent",
+  tool_call: "gateway",
+  tool_result: "tool-result",
+  final: "final",
+  gateway: "gateway",
+  agent: "agent",
 };
 
 function addStep(kind, content, opts = {}) {
   const step = document.createElement("div");
-  step.className = "step " + kind + (opts.isError ? " error" : "");
+  step.className = "step " + (KIND_CLASS[kind] || kind) + (opts.isError ? " error" : "");
   const head = document.createElement("div");
   head.className = "head";
   const kindEl = document.createElement("span");
@@ -47,16 +59,121 @@ function addStep(kind, content, opts = {}) {
     head.appendChild(meta);
   }
   step.appendChild(head);
-  if (content) {
-    const body = document.createElement("div");
-    body.className = "body" + (opts.isError ? " error-text" : "");
-    body.textContent = content;
-    step.appendChild(body);
-  }
+  const body = document.createElement("div");
+  body.className = "body" + (opts.isError ? " error-text" : "");
+  if (opts.rich) renderRich(body, content);
+  else if (content) body.textContent = content;
+  step.appendChild(body);
   timeline.appendChild(step);
   step.scrollIntoView({ block: "nearest" });
   return step;
 }
+
+function setLatency(stepEl, ms) {
+  if (ms == null || !stepEl) return;
+  let meta = stepEl.querySelector(".meta");
+  if (!meta) {
+    meta = document.createElement("span");
+    meta.className = "meta";
+    stepEl.querySelector(".head").appendChild(meta);
+  }
+  meta.textContent = Math.round(ms) + "ms";
+}
+
+/* ---------- 富文本渲染：``` 代码块（SQL 高亮）/ Markdown 表格 / - 列表 / 段落 ---------- */
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+}
+
+/* SQL 极简高亮：字符串整体着色，其余部分按关键字/函数/数字着色 */
+function highlightSql(src) {
+  return src
+    .split(/('[^']*')/g)
+    .map((part, i) => {
+      if (i % 2 === 1) return `<span class="tok-str">${part}</span>`;
+      return part
+        .replace(
+          /\b(SELECT|FROM|WHERE|GROUP BY|ORDER BY|LIMIT|JOIN|INNER|LEFT|ON|AS|ASC|DESC|AND|OR|NOT|NULL|WITH|DISTINCT|HAVING|BY)\b/g,
+          '<span class="tok-kw">$1</span>'
+        )
+        .replace(/\b(COUNT|SUM|AVG|ROUND|MAX|MIN|COALESCE)\b(?=\s*\()/g, '<span class="tok-fn">$1</span>')
+        .replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="tok-num">$1</span>');
+    })
+    .join("");
+}
+
+function renderRich(container, text) {
+  const lines = String(text).replace(/\r\n/g, "\n").split("\n");
+  const isFence = (s) => /^\s*```/.test(s);
+  const isTableRow = (s) => /^\s*\|.*\|\s*$/.test(s);
+  const isBullet = (s) => /^\s*-\s+/.test(s);
+  const cells = (row) =>
+    row
+      .trim()
+      .replace(/^\|/, "")
+      .replace(/\|$/, "")
+      .split("|")
+      .map((c) => c.trim());
+  let html = "";
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (isFence(line)) {
+      const lang = line.trim().replace(/^```/, "").trim();
+      i += 1;
+      const code = [];
+      while (i < lines.length && !isFence(lines[i])) code.push(lines[i++]);
+      i += 1; // 跳过收尾 ```
+      const escaped = escapeHtml(code.join("\n"));
+      const looksSql = lang.toLowerCase() === "sql" || /\bselect\b|\bwith\b/i.test(escaped);
+      const highlighted = looksSql ? highlightSql(escaped) : escaped;
+      html +=
+        `<pre class="code-block">` +
+        (lang ? `<span class="code-lang">${escapeHtml(lang)}</span>` : "") +
+        `<code>${highlighted}</code></pre>`;
+      continue;
+    }
+    if (isTableRow(line)) {
+      const rows = [];
+      while (i < lines.length && isTableRow(lines[i])) rows.push(lines[i++]);
+      const isSep = (row) => cells(row).every((c) => /^:?-{2,}:?$/.test(c));
+      const head = cells(rows[0]);
+      const bodyRows = rows.slice(1).filter((r) => !isSep(r)).map(cells);
+      html +=
+        `<table class="md-table"><thead><tr>` +
+        head.map((c) => `<th>${escapeHtml(c)}</th>`).join("") +
+        `</tr></thead><tbody>` +
+        bodyRows.map((r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join("")}</tr>`).join("") +
+        `</tbody></table>`;
+      continue;
+    }
+    if (isBullet(line)) {
+      const items = [];
+      while (i < lines.length && isBullet(lines[i])) items.push(lines[i++].replace(/^\s*-\s+/, ""));
+      html += `<ul>${items.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}</ul>`;
+      continue;
+    }
+    if (line.trim() === "") {
+      i += 1;
+      continue;
+    }
+    const para = [];
+    while (
+      i < lines.length &&
+      lines[i].trim() !== "" &&
+      !isFence(lines[i]) &&
+      !isTableRow(lines[i]) &&
+      !isBullet(lines[i])
+    ) {
+      para.push(lines[i++]);
+    }
+    html += `<p>${para.map((l) => escapeHtml(l)).join("<br>")}</p>`;
+  }
+  container.innerHTML = html;
+}
+
+/* ---------- 网关请求 ---------- */
 
 function apiKey() {
   return keyInput.value.trim();
@@ -68,10 +185,6 @@ function headers() {
 
 async function requestJson(url, options) {
   const resp = await fetch(url, options);
-  if (resp.status === 401 || resp.status === 429 || resp.status === 503) {
-    const body = await resp.json().catch(() => ({}));
-    throw new Error(`HTTP ${resp.status}：${body.detail || resp.statusText}`);
-  }
   if (!resp.ok) {
     const body = await resp.json().catch(() => ({}));
     throw new Error(`HTTP ${resp.status}：${body.detail || resp.statusText}`);
@@ -93,8 +206,8 @@ async function runAgent(question) {
   }
 }
 
-/* 阶段 4：POST /agent/run/stream 逐帧读取 SSE（\n\n 分帧），
- * token 逐字追加，step 实时插入时间线卡片。 */
+/* POST /agent/run/stream 逐帧读取 SSE（\n\n 分帧），
+ * token 逐字追加到最终回答卡，step 实时插入时间线卡片。 */
 async function runAgentStream(question, placeholder) {
   const resp = await fetch("/agent/run/stream", {
     method: "POST",
@@ -126,7 +239,8 @@ async function runAgentStream(question, placeholder) {
   }
 }
 
-/* 解析单个 SSE 帧（event: xxx\ndata: {...}），返回 final 步骤的元素（供 token 追加）。 */
+/* 解析单个 SSE 帧（event: xxx\ndata: {...})。
+ * 返回值只允许是「最终回答卡」元素（token 追加容器），其余一律返回 null。 */
 function handleFrame(frame, finalEl) {
   let eventName = null;
   const dataLines = [];
@@ -146,6 +260,11 @@ function handleFrame(frame, finalEl) {
     finalEl.scrollIntoView({ block: "nearest" });
     return finalEl;
   }
+  if (eventName === "error") {
+    return addStep("final", `流式执行出错：${payload.detail || payload.error || "未知错误"}`, {
+      isError: true,
+    });
+  }
   if (eventName === "done" && payload.response) {
     const resp = payload.response;
     toolCount.textContent = `工具: ${resp.tools_total}/${resp.tools_total} · 注入: ${resp.tools_injected}`;
@@ -155,13 +274,19 @@ function handleFrame(frame, finalEl) {
   return null;
 }
 
-/* 流式 step 事件：复用渲染逻辑；token 前的 final step 卡作为逐字追加容器。 */
+/* 流式 step 事件渲染。只有 final 卡可作为返回值（供 token 追加）；
+ * user 步骤跳过（发送时本地已渲染，避免重复卡片）。 */
 function renderStreamStep(step, finalEl) {
-  if (step.kind === "tool_call" && !step.is_error) {
-    return addStep("gateway", `鉴权 ✓ 限流 ✓ 执行 ${step.tool}`, {
-      tool: step.tool,
-      latencyMs: step.latency_ms,
-    });
+  if (step.kind === "user") {
+    return null;
+  }
+  if (step.kind === "tool_call") {
+    addStep(
+      "gateway",
+      step.is_error ? step.content || "工具调用失败" : `鉴权 ✓ 限流 ✓ 执行 ${step.tool}`,
+      { tool: step.tool, latencyMs: step.latency_ms, isError: step.is_error }
+    );
+    return null;
   }
   if (step.kind === "tool_result") {
     const card = addStep("tool-result", `工具 ${step.tool} 返回：`, {
@@ -170,22 +295,27 @@ function renderStreamStep(step, finalEl) {
       isError: step.is_error,
     });
     const results = document.createElement("div");
-    results.className = "tool-results";
-    results.textContent = step.content;
+    results.className = "tool-results rich";
+    renderRich(results, step.content);
     card.appendChild(results);
     return null;
   }
   if (step.kind === "final") {
-    if (finalEl) return finalEl;
-    return addStep("final", step.content || "", {
-      isError: step.is_error,
-      latencyMs: step.latency_ms,
-    });
+    let card = finalEl;
+    if (!card) card = addStep("final", "", { isError: step.is_error });
+    const body = card.querySelector(".body");
+    body.classList.toggle("error-text", Boolean(step.is_error));
+    body.innerHTML = "";
+    renderRich(body, step.content || "");
+    setLatency(card, step.latency_ms);
+    card.scrollIntoView({ block: "nearest" });
+    return card;
   }
-  return addStep(step.kind, step.content, {
+  addStep(step.kind, step.content, {
     isError: step.is_error,
     latencyMs: step.latency_ms,
   });
+  return null;
 }
 
 async function healthCheck() {
@@ -207,10 +337,200 @@ async function listTools() {
   }
 }
 
+/* ---------- 右侧「运行流程」演示动画（与真实请求异步，仅由发送/重播触发） ---------- */
+
+const flowStage = document.getElementById("flow-stage");
+const flowDot = document.getElementById("flow-dot");
+const flowStatus = document.getElementById("flow-status");
+const flowCaption = document.getElementById("flow-caption-text");
+const flowPauseBtn = document.getElementById("flow-pause-btn");
+const flowReplayBtn = document.getElementById("flow-replay-btn");
+const flowPanel = document.getElementById("flow-panel");
+
+const FLOW_TRAVEL_MS = 750;
+const FLOW_HOLD_MS = 420;
+
+/* 每段：路径 id、起点/终点节点、到达后浮现的小标签（节点 id + 文案）、底部字幕 */
+const FLOW_SEGMENTS = [
+  {
+    path: "fp12", from: "n1", to: "n2", tip: "n2", label: "鉴权 · 限流",
+    cap: "① 用户提问进入网关：校验 X-API-Key（失败 401）→ 令牌桶限流（超限 429 + Retry-After）",
+  },
+  {
+    path: "fp23", from: "n2", to: "n3", tip: "n3", label: "筛选工具",
+    cap: "② ToolRouter 对问题分词打分，只注入 top-k 相关工具，避免全量塞进模型上下文",
+  },
+  {
+    path: "fp34", from: "n3", to: "n4", tip: "n4", label: "选择工具",
+    cap: "③ Agent · 模型决定调用哪个工具：默认 Mock 剧本；配置 GATEWAY_AGENT_API_KEY 后为真实 LLM 推理",
+  },
+  {
+    path: "fp45", from: "n4", to: "n5", tip: "n5", label: "命名空间路由",
+    cap: "④ Registry 按 {server}__{tool} 命名空间把工具调用路由到来源 MCP Server",
+  },
+  {
+    path: "fp56", from: "n5", to: "n6", tip: "n6", label: "MCP 协议调用",
+    cap: "⑤ MCP Client 经 stdio / HTTP / inprocess 传输发出协议调用（30s 总超时保护）",
+  },
+  {
+    path: "fp67", from: "n6", to: "n7", tip: "n7", label: "NL2SQL 生成 SQL",
+    cap: "⑥ demo_sql_server 执行 ask：hybrid 模式规则命中直接出 SQL，未命中才降级 LLM",
+  },
+  {
+    path: "fp78", from: "n7", to: "n8", tip: "n8", label: "只读查询",
+    cap: "⑦ 只读校验（仅 SELECT/WITH、拒绝危险关键字）后查询 SQLite，最多返回 50 行",
+  },
+  {
+    path: "fpRet", from: "n8", to: "n4", tip: "n4", label: "结果回填", mode: "ret",
+    cap: "⑧ 工具结果沿链路返回，回填模型组织最终回答",
+  },
+  {
+    path: "fpAns", from: "n4", to: "n1", tip: "n1", label: "流式回答", mode: "ans",
+    cap: "⑨ SSE 逐字流式输出最终回答；Prometheus 计数、structlog 记录全程事件",
+  },
+];
+
+/* 小标签锚点（viewBox 坐标 → 百分比定位，随 SVG 等比缩放） */
+const FLOW_TIP_POS = {
+  n1: { x: 258, y: 37, transform: "translate(0, -50%)" },
+  n2: { x: 224, y: 85, transform: "translate(-50%, -100%)" },
+  n3: { x: 176, y: 160, transform: "translate(-50%, -100%)" },
+  n4: { x: 224, y: 235, transform: "translate(-50%, -100%)" },
+  n5: { x: 176, y: 310, transform: "translate(-50%, -100%)" },
+  n6: { x: 224, y: 385, transform: "translate(-50%, -100%)" },
+  n7: { x: 176, y: 460, transform: "translate(-50%, -100%)" },
+  n8: { x: 224, y: 535, transform: "translate(-50%, -100%)" },
+};
+
+const flowTipEls = {};
+for (const [id, pos] of Object.entries(FLOW_TIP_POS)) {
+  const el = document.createElement("div");
+  el.className = "flow-tip";
+  el.style.left = (pos.x / 360) * 100 + "%";
+  el.style.top = (pos.y / 620) * 100 + "%";
+  el.style.transform = pos.transform;
+  flowStage.appendChild(el);
+  flowTipEls[id] = el;
+}
+
+const flow = { running: false, paused: false, seg: 0, phase: "travel", t: 0, raf: 0, last: 0 };
+const flowPathLen = {};
+
+function flowNode(id) {
+  return document.getElementById(id);
+}
+
+function flowSetStatus(text, mode) {
+  flowStatus.textContent = text;
+  flowStatus.className = "flow-status " + mode;
+}
+
+function flowEase(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+function flowReset() {
+  flow.running = false;
+  flow.paused = false;
+  flow.phase = "travel";
+  flow.t = 0;
+  flowPauseBtn.textContent = "暂停";
+  flowPauseBtn.disabled = true;
+  flowStage.classList.remove("paused");
+  flowPanel.classList.remove("running");
+  flowStage.querySelectorAll(".flow-node").forEach((n) => n.classList.remove("active", "done"));
+  Object.values(flowTipEls).forEach((t) => t.classList.remove("show"));
+  flowDot.setAttribute("opacity", "0");
+  flowSetStatus("待机", "idle");
+}
+
+function flowStart() {
+  if (flow.running) cancelAnimationFrame(flow.raf);
+  flowReset();
+  flow.running = true;
+  flowNode("n1").classList.add("active");
+  flowPanel.classList.add("running");
+  flowSetStatus("演示中", "run");
+  flowCaption.textContent = FLOW_SEGMENTS[0].cap;
+  flowPauseBtn.disabled = false;
+  flow.last = performance.now();
+  flow.raf = requestAnimationFrame(flowLoop);
+}
+
+function flowLoop(ts) {
+  const dt = Math.min(ts - flow.last, 120);
+  flow.last = ts;
+  if (!flow.paused) flowAdvance(dt);
+  if (flow.running) flow.raf = requestAnimationFrame(flowLoop);
+}
+
+function flowAdvance(dt) {
+  const seg = FLOW_SEGMENTS[flow.seg];
+  if (!seg) {
+    flowFinish();
+    return;
+  }
+  const path = document.getElementById(seg.path);
+  if (!path) return;
+  if (!(seg.path in flowPathLen)) flowPathLen[seg.path] = path.getTotalLength();
+  if (flow.phase === "travel") {
+    flow.t += dt / FLOW_TRAVEL_MS;
+    const p = Math.min(flow.t, 1);
+    const pt = path.getPointAtLength(flowEase(p) * flowPathLen[seg.path]);
+    flowDot.setAttribute("cx", pt.x);
+    flowDot.setAttribute("cy", pt.y);
+    flowDot.setAttribute("opacity", "1");
+    flowDot.setAttribute("class", "flow-dot" + (seg.mode ? " " + seg.mode : ""));
+    if (p >= 1) {
+      flowNode(seg.from).classList.remove("active");
+      flowNode(seg.from).classList.add("done");
+      const target = flowNode(seg.to);
+      target.classList.remove("done");
+      target.classList.add("active");
+      const tip = flowTipEls[seg.tip];
+      tip.textContent = seg.label;
+      tip.classList.add("show");
+      flowCaption.textContent = seg.cap;
+      flow.phase = "hold";
+      flow.t = 0;
+    }
+  } else {
+    flow.t += dt / FLOW_HOLD_MS;
+    if (flow.t >= 1) {
+      flowNode(seg.to).classList.remove("active");
+      flowNode(seg.to).classList.add("done");
+      flow.seg += 1;
+      flow.phase = "travel";
+      flow.t = 0;
+      if (flow.seg >= FLOW_SEGMENTS.length) flowFinish();
+    }
+  }
+}
+
+function flowFinish() {
+  flow.running = false;
+  flowDot.setAttribute("opacity", "0");
+  flowPanel.classList.remove("running");
+  flowSetStatus("完成 ✓", "done");
+  flowCaption.textContent = "演示完成：一次「问题 → 工具 → 数据 → 回答」的完整闭环（演示动画与真实请求异步）。";
+  flowPauseBtn.disabled = true;
+}
+
+function flowTogglePause() {
+  if (!flow.running) return;
+  flow.paused = !flow.paused;
+  flowStage.classList.toggle("paused", flow.paused);
+  flowPauseBtn.textContent = flow.paused ? "继续" : "暂停";
+  flowSetStatus(flow.paused ? "已暂停" : "演示中", flow.paused ? "paused" : "run");
+}
+
+/* ---------- 事件绑定 ---------- */
+
 function onSend() {
   const question = questionInput.value.trim();
   if (!question) return;
   questionInput.value = "";
+  flowStart();
   runAgent(question);
 }
 
@@ -220,3 +540,5 @@ questionInput.addEventListener("keydown", (event) => {
 });
 healthBtn.addEventListener("click", healthCheck);
 toolsBtn.addEventListener("click", listTools);
+flowPauseBtn.addEventListener("click", flowTogglePause);
+flowReplayBtn.addEventListener("click", flowStart);
