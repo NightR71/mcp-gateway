@@ -117,41 +117,33 @@ body {
   overflow-y: auto;
 }
 
-/* Key 输入区：不做卡片框，与「运行流程」面板明确分开 */
+/* 顶部右侧 Key 输入（与描述栏同一框，靠右对齐） */
 
-#key-card {
-  padding: 2px 2px 0;
-}
-
-.side-label {
-  display: block;
+.key-label {
+  margin-left: auto;
   color: var(--muted);
-  font-size: 13px;
-  margin-bottom: 6px;
-  letter-spacing: 0.5px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
 }
 
 #api-key {
-  width: 100%;
+  width: 220px;
   background: rgba(13, 17, 23, 0.85);
   border: 1px solid var(--border);
   color: var(--text);
-  padding: 7px 10px;
+  padding: 5px 10px;
   border-radius: 6px;
   font-family: inherit;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 #api-key:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 8px rgba(47, 129, 247, 0.25);
-}
-
-.side-hint {
-  margin-top: 6px;
-  color: var(--muted);
-  font-size: 12px;
 }
 
 /* ---------- 运行流程面板：毛玻璃 + 边框微光（独立于 Key 输入区的唯一卡片框） ---------- */
@@ -343,9 +335,9 @@ body {
   background: rgba(10, 15, 25, 0.88);
   border: 1px solid rgba(52, 211, 153, 0.35);
   color: #a7f3d0;
-  font-size: 12px;
+  font-size: 10px;
   line-height: 1.5;
-  padding: 2px 10px;
+  padding: 2px 8px;
   border-radius: 999px;
   white-space: nowrap;
   opacity: 0;

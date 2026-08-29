@@ -15,6 +15,9 @@
     <span id="tool-count" class="pill" title="网关聚合工具数 / 本轮注入数">工具: -/- · 注入: -</span>
     <span id="round-info" class="pill hidden">轮数: -</span>
     <span id="gateway-url" class="pill">网关: 本机</span>
+    <label class="key-label" for="api-key">Key
+      <input id="api-key" type="password" placeholder="X-API-Key" autocomplete="off" title="演示 Key：dev-key-please-change；Key 只放在请求头，不写入 localStorage" />
+    </label>
   </header>
 
   <main id="layout">
@@ -23,12 +26,6 @@
     </section>
 
     <aside id="sidebar">
-      <div id="key-card">
-        <label class="side-label" for="api-key">X-API-Key</label>
-        <input id="api-key" type="password" placeholder="演示 Key：dev-key-please-change" autocomplete="off" />
-        <div class="side-hint">Key 只放在请求头，不写入 localStorage</div>
-      </div>
-
       <div class="side-card" id="flow-panel">
         <div class="flow-head">
           <span class="flow-title">运行流程</span>
