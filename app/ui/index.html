@@ -8,7 +8,10 @@
 </head>
 <body>
   <header id="status-bar">
-    <span class="brand">MCP Agent Workbench</span>
+    <div class="brand-block">
+      <span class="brand">MCP Agent Workbench</span>
+      <span class="brand-desc">项目演示界面：输入中文问题，观察网关 Agent 完成「鉴权限流 → 工具路由 → MCP 调用 → 流式回答」的完整链路</span>
+    </div>
     <span id="tool-count" class="pill" title="网关聚合工具数 / 本轮注入数">工具: -/- · 注入: -</span>
     <span id="round-info" class="pill hidden">轮数: -</span>
     <span id="gateway-url" class="pill">网关: 本机</span>
@@ -20,7 +23,7 @@
     </section>
 
     <aside id="sidebar">
-      <div class="side-card" id="key-card">
+      <div id="key-card">
         <label class="side-label" for="api-key">X-API-Key</label>
         <input id="api-key" type="password" placeholder="演示 Key：dev-key-please-change" autocomplete="off" />
         <div class="side-hint">Key 只放在请求头，不写入 localStorage</div>
@@ -31,11 +34,11 @@
           <span class="flow-title">运行流程</span>
           <span id="flow-status" class="flow-status idle">待机</span>
           <button id="flow-pause-btn" class="mini ghost" type="button" disabled>暂停</button>
-          <button id="flow-replay-btn" class="mini ghost" type="button">重播</button>
+          <button id="flow-replay-btn" class="mini ghost" type="button">播放/重播</button>
         </div>
 
         <div id="flow-stage">
-          <svg viewBox="0 0 360 620" width="100%" role="img" aria-label="MCP Gateway 运行流程图">
+          <svg viewBox="0 0 380 640" width="100%" role="img" aria-label="MCP Gateway 运行流程图">
             <defs>
               <pattern id="flow-grid" width="22" height="22" patternUnits="userSpaceOnUse">
                 <path d="M22 0H0V22" fill="none" stroke="rgba(148,163,184,0.07)" stroke-width="0.5" />
@@ -44,75 +47,75 @@
                 <stop offset="0%" stop-color="rgba(47,129,247,0.12)" />
                 <stop offset="100%" stop-color="rgba(13,17,23,0)" />
               </radialGradient>
-              <marker id="flow-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6.5" markerHeight="6.5" orient="auto">
+              <marker id="flow-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
                 <path d="M0 0 L8 4 L0 8 z" fill="rgba(148,163,184,0.55)" />
               </marker>
             </defs>
 
-            <rect x="0" y="0" width="360" height="620" fill="url(#flow-bg)" />
-            <rect x="0" y="0" width="360" height="620" fill="url(#flow-grid)" />
+            <rect x="0" y="0" width="380" height="640" fill="url(#flow-bg)" />
+            <rect x="0" y="0" width="380" height="640" fill="url(#flow-grid)" />
 
             <!-- 出站链路（贝塞尔曲线） -->
-            <path id="fp12" class="flow-link" d="M 176 56 C 176 75, 224 74, 224 93" marker-end="url(#flow-arrow)" />
-            <path id="fp23" class="flow-link" d="M 224 131 C 224 150, 176 149, 176 168" marker-end="url(#flow-arrow)" />
-            <path id="fp34" class="flow-link" d="M 176 206 C 176 225, 224 224, 224 243" marker-end="url(#flow-arrow)" />
-            <path id="fp45" class="flow-link" d="M 224 281 C 224 300, 176 299, 176 318" marker-end="url(#flow-arrow)" />
-            <path id="fp56" class="flow-link" d="M 176 356 C 176 375, 224 374, 224 393" marker-end="url(#flow-arrow)" />
-            <path id="fp67" class="flow-link" d="M 224 431 C 224 450, 176 449, 176 468" marker-end="url(#flow-arrow)" />
-            <path id="fp78" class="flow-link" d="M 176 506 C 176 525, 224 524, 224 543" marker-end="url(#flow-arrow)" />
+            <path id="fp12" class="flow-link" d="M 162 60 C 162 80, 218 80, 218 100" marker-end="url(#flow-arrow)" />
+            <path id="fp23" class="flow-link" d="M 218 140 C 218 160, 162 160, 162 180" marker-end="url(#flow-arrow)" />
+            <path id="fp34" class="flow-link" d="M 162 220 C 162 240, 218 240, 218 260" marker-end="url(#flow-arrow)" />
+            <path id="fp45" class="flow-link" d="M 218 300 C 218 320, 162 320, 162 340" marker-end="url(#flow-arrow)" />
+            <path id="fp56" class="flow-link" d="M 162 380 C 162 400, 218 400, 218 420" marker-end="url(#flow-arrow)" />
+            <path id="fp67" class="flow-link" d="M 218 460 C 218 480, 162 480, 162 500" marker-end="url(#flow-arrow)" />
+            <path id="fp78" class="flow-link" d="M 162 540 C 162 560, 218 560, 218 580" marker-end="url(#flow-arrow)" />
             <!-- 回程：结果回填（左侧）与流式回答（右侧） -->
-            <path id="fpRet" class="flow-link ret" d="M 149 562 C 30 562, 30 262, 149 262" marker-end="url(#flow-arrow)" />
-            <path id="fpAns" class="flow-link ans" d="M 299 262 C 330 262, 330 37, 251 37" marker-end="url(#flow-arrow)" />
+            <path id="fpRet" class="flow-link ret" d="M 133 600 C 32 600, 32 280, 133 280" marker-end="url(#flow-arrow)" />
+            <path id="fpAns" class="flow-link ans" d="M 303 280 C 348 280, 348 40, 247 40" marker-end="url(#flow-arrow)" />
 
             <!-- 节点：用户 → 网关 → 路由 → 模型 → 注册中心 → MCP 客户端 → demo server → SQLite -->
             <g class="flow-node" id="n1">
-              <rect x="101" y="18" width="150" height="38" rx="10" />
-              <text class="nt" x="176" y="34" text-anchor="middle">用户</text>
-              <text class="ns" x="176" y="47" text-anchor="middle">浏览器工作台</text>
+              <rect x="77" y="20" width="170" height="40" rx="10" />
+              <text class="nt" x="162" y="37" text-anchor="middle">用户</text>
+              <text class="ns" x="162" y="53" text-anchor="middle">浏览器工作台</text>
             </g>
             <g class="flow-node" id="n2">
-              <rect x="149" y="93" width="150" height="38" rx="10" />
-              <text class="nt" x="224" y="109" text-anchor="middle">Gateway 网关</text>
-              <text class="ns" x="224" y="122" text-anchor="middle">鉴权 · 限流 · SSE</text>
+              <rect x="133" y="100" width="170" height="40" rx="10" />
+              <text class="nt" x="218" y="117" text-anchor="middle">Gateway 网关</text>
+              <text class="ns" x="218" y="133" text-anchor="middle">鉴权 · 限流 · SSE</text>
             </g>
             <g class="flow-node" id="n3">
-              <rect x="101" y="168" width="150" height="38" rx="10" />
-              <text class="nt" x="176" y="184" text-anchor="middle">ToolRouter</text>
-              <text class="ns" x="176" y="197" text-anchor="middle">语义筛选 top-k</text>
+              <rect x="77" y="180" width="170" height="40" rx="10" />
+              <text class="nt" x="162" y="197" text-anchor="middle">ToolRouter</text>
+              <text class="ns" x="162" y="213" text-anchor="middle">语义筛选 top-k</text>
             </g>
             <g class="flow-node" id="n4">
-              <rect x="149" y="243" width="150" height="38" rx="10" />
-              <text class="nt" x="224" y="259" text-anchor="middle">Agent · 模型</text>
-              <text class="ns" x="224" y="272" text-anchor="middle">AgentRunner + Model</text>
+              <rect x="133" y="260" width="170" height="40" rx="10" />
+              <text class="nt" x="218" y="277" text-anchor="middle">Agent · 模型</text>
+              <text class="ns" x="218" y="293" text-anchor="middle">AgentRunner + Model</text>
             </g>
             <g class="flow-node" id="n5">
-              <rect x="101" y="318" width="150" height="38" rx="10" />
-              <text class="nt" x="176" y="334" text-anchor="middle">Registry</text>
-              <text class="ns" x="176" y="347" text-anchor="middle">{server}__{tool} 路由</text>
+              <rect x="77" y="340" width="170" height="40" rx="10" />
+              <text class="nt" x="162" y="357" text-anchor="middle">Registry</text>
+              <text class="ns" x="162" y="373" text-anchor="middle">{server}__{tool} 路由</text>
             </g>
             <g class="flow-node" id="n6">
-              <rect x="149" y="393" width="150" height="38" rx="10" />
-              <text class="nt" x="224" y="409" text-anchor="middle">MCP Client</text>
-              <text class="ns" x="224" y="422" text-anchor="middle">stdio · http · inprocess</text>
+              <rect x="133" y="420" width="170" height="40" rx="10" />
+              <text class="nt" x="218" y="437" text-anchor="middle">MCP Client</text>
+              <text class="ns" x="218" y="453" text-anchor="middle">stdio/http/inprocess</text>
             </g>
             <g class="flow-node" id="n7">
-              <rect x="101" y="468" width="150" height="38" rx="10" />
-              <text class="nt" x="176" y="484" text-anchor="middle">demo_sql_server</text>
-              <text class="ns" x="176" y="497" text-anchor="middle">NL2SQL 双引擎</text>
+              <rect x="77" y="500" width="170" height="40" rx="10" />
+              <text class="nt" x="162" y="517" text-anchor="middle">demo_sql_server</text>
+              <text class="ns" x="162" y="533" text-anchor="middle">NL2SQL 双引擎</text>
             </g>
             <g class="flow-node" id="n8">
-              <rect x="149" y="543" width="150" height="38" rx="10" />
-              <text class="nt" x="224" y="559" text-anchor="middle">SQLite</text>
-              <text class="ns" x="224" y="572" text-anchor="middle">只读 SQL · max 50 行</text>
+              <rect x="133" y="580" width="170" height="40" rx="10" />
+              <text class="nt" x="218" y="597" text-anchor="middle">SQLite</text>
+              <text class="ns" x="218" y="613" text-anchor="middle">只读 SQL · max 50 行</text>
             </g>
 
             <!-- 数据流光点（由 app.js 驱动） -->
-            <circle id="flow-dot" class="flow-dot" r="4" opacity="0" />
+            <circle id="flow-dot" class="flow-dot" r="4.5" opacity="0" />
           </svg>
         </div>
 
         <div class="flow-caption">
-          <span id="flow-caption-text">点击「发送」触发演示：光点沿调用链流动（动画与真实请求异步，仅作链路可视化）。</span>
+          <span id="flow-caption-text">点击「发送」或「播放/重播」触发演示：光点沿调用链流动（动画与真实请求异步，仅作链路可视化）。</span>
         </div>
       </div>
     </aside>

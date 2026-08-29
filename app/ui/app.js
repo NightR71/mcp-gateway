@@ -392,22 +392,22 @@ const FLOW_SEGMENTS = [
 
 /* 小标签锚点（viewBox 坐标 → 百分比定位，随 SVG 等比缩放） */
 const FLOW_TIP_POS = {
-  n1: { x: 258, y: 37, transform: "translate(0, -50%)" },
-  n2: { x: 224, y: 85, transform: "translate(-50%, -100%)" },
-  n3: { x: 176, y: 160, transform: "translate(-50%, -100%)" },
-  n4: { x: 224, y: 235, transform: "translate(-50%, -100%)" },
-  n5: { x: 176, y: 310, transform: "translate(-50%, -100%)" },
-  n6: { x: 224, y: 385, transform: "translate(-50%, -100%)" },
-  n7: { x: 176, y: 460, transform: "translate(-50%, -100%)" },
-  n8: { x: 224, y: 535, transform: "translate(-50%, -100%)" },
+  n1: { x: 262, y: 40, transform: "translate(0, -50%)" },
+  n2: { x: 218, y: 92, transform: "translate(-50%, -100%)" },
+  n3: { x: 162, y: 172, transform: "translate(-50%, -100%)" },
+  n4: { x: 218, y: 252, transform: "translate(-50%, -100%)" },
+  n5: { x: 162, y: 332, transform: "translate(-50%, -100%)" },
+  n6: { x: 218, y: 412, transform: "translate(-50%, -100%)" },
+  n7: { x: 162, y: 492, transform: "translate(-50%, -100%)" },
+  n8: { x: 218, y: 572, transform: "translate(-50%, -100%)" },
 };
 
 const flowTipEls = {};
 for (const [id, pos] of Object.entries(FLOW_TIP_POS)) {
   const el = document.createElement("div");
   el.className = "flow-tip";
-  el.style.left = (pos.x / 360) * 100 + "%";
-  el.style.top = (pos.y / 620) * 100 + "%";
+  el.style.left = (pos.x / 380) * 100 + "%";
+  el.style.top = (pos.y / 640) * 100 + "%";
   el.style.transform = pos.transform;
   flowStage.appendChild(el);
   flowTipEls[id] = el;
@@ -432,6 +432,7 @@ function flowEase(t) {
 function flowReset() {
   flow.running = false;
   flow.paused = false;
+  flow.seg = 0; // 复位段索引：否则上一轮播完后重播会直接跳到「完成」
   flow.phase = "travel";
   flow.t = 0;
   flowPauseBtn.textContent = "暂停";

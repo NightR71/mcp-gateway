@@ -56,6 +56,18 @@ body {
   text-shadow: 0 0 12px rgba(47, 129, 247, 0.45);
 }
 
+.brand-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.brand-desc {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.3px;
+}
+
 .pill {
   padding: 2px 10px;
   border: 1px solid var(--border);
@@ -105,19 +117,16 @@ body {
   overflow-y: auto;
 }
 
-.side-card {
-  background: rgba(22, 27, 34, 0.55);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(139, 148, 158, 0.18);
-  border-radius: 12px;
-  padding: 12px;
+/* Key 输入区：不做卡片框，与「运行流程」面板明确分开 */
+
+#key-card {
+  padding: 2px 2px 0;
 }
 
 .side-label {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   margin-bottom: 6px;
   letter-spacing: 0.5px;
 }
@@ -142,13 +151,18 @@ body {
 .side-hint {
   margin-top: 6px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
-/* ---------- 运行流程面板：毛玻璃 + 边框微光 ---------- */
+/* ---------- 运行流程面板：毛玻璃 + 边框微光（独立于 Key 输入区的唯一卡片框） ---------- */
 
 #flow-panel {
-  border-color: rgba(59, 130, 246, 0.22);
+  background: rgba(22, 27, 34, 0.55);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(59, 130, 246, 0.22);
+  border-radius: 12px;
+  padding: 12px;
   box-shadow:
     0 0 18px rgba(47, 129, 247, 0.1),
     inset 0 0 20px rgba(47, 129, 247, 0.03);
@@ -171,15 +185,15 @@ body {
 
 .flow-title {
   font-weight: bold;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text);
 }
 
 .flow-status {
-  padding: 1px 8px;
+  padding: 1px 10px;
   border-radius: 999px;
   border: 1px solid var(--border);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .flow-status.idle {
@@ -203,8 +217,8 @@ body {
 
 .mini {
   margin-left: auto;
-  padding: 2px 10px;
-  font-size: 11px;
+  padding: 3px 12px;
+  font-size: 12px;
   border-radius: 6px;
   cursor: pointer;
 }
@@ -245,13 +259,13 @@ body {
 
 .flow-node .nt {
   fill: #d7e3f4;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
 }
 
 .flow-node .ns {
   fill: #64748b;
-  font-size: 8.5px;
+  font-size: 11px;
 }
 
 .flow-node.active rect {
@@ -329,9 +343,9 @@ body {
   background: rgba(10, 15, 25, 0.88);
   border: 1px solid rgba(52, 211, 153, 0.35);
   color: #a7f3d0;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.5;
-  padding: 2px 8px;
+  padding: 2px 10px;
   border-radius: 999px;
   white-space: nowrap;
   opacity: 0;
@@ -349,8 +363,8 @@ body {
 .flow-caption {
   margin-top: 10px;
   color: var(--muted);
-  font-size: 11px;
-  line-height: 1.7;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 #flow-caption-text {
