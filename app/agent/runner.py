@@ -11,10 +11,14 @@ M3（简历 Agent 增量，全部为可选参数，不传时行为与旧版完�
   命中红线话题时直接返回配置话术、不进模型（确定性拦截）；
 - `output_guard`：对最终回答与步骤内容做 PII 模式打码，流式路径用滑动窗口
   掩码器（跨 token 拼接的 PII 也能完整命中后再打码）。
+
+M6（旁白的结构性抑制）：流式路径**只把"确定不含 tool_calls 的最终轮"文本作为回答下发**，
+工具轮（决策轮）的文本一律丢弃——原因与做法见 `ANSWER_REPLAY_CHUNK` 的注释。
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from collections.abc import AsyncIterator
@@ -24,11 +28,14 @@ from app.agent.models import Message, Model
 from app.agent.persona import PolicyHit, ResumePersona
 from app.agent.schemas import AgentEvent, AgentRequest, AgentResponse, AgentStep
 from app.core.errors import log_and_hide
+from app.core.logging import get_logger
 from app.core.output_guard import OutputGuard
 from app.mcp.registry import ToolRegistry
 from app.mcp.schemas import ToolCallTimeoutError, ToolInfo, ToolNotAllowedError, UnknownToolError
 from app.mcp.tool_router import ToolRouter
 from app.schemas.auth import APIKeyInfo
+
+logger = get_logger(__name__)
 
 MAX_ROUNDS_FALLBACK = "（达到最大往返轮数，模型仍未给出最终回答）"
 
@@ -38,6 +45,19 @@ EXPECTED_TOOL_ERRORS = (UnknownToolError, ToolNotAllowedError, ToolCallTimeoutEr
 
 # 固定话术的流式分块大小（字符）：给前端打字机效果，又不至于逐字抖动
 FIXED_REPLY_CHUNK = 8
+
+# 最终答案的分块回放（M6 结构性修复：决策轮旁白不再下发）：
+#
+# 背景：OpenAI 兼容的流式协议里，tool_calls 是**静默累积**的（app/agent/models.py 只在
+# 轮末的 message 事件里给出），所以"这一轮是不是最终回答轮"只有等轮结束才知道。此前
+# 每轮的文本增量都直接作为 token 下发，于是"先检索"那一轮的过渡句（I'll look that up.）
+# 被当成回答正文流给了面试官——M5 §6.6 用提示词规则压住过，换模型后复发。
+#
+# 现在的做法：每轮文本先缓冲，**只有确定不含 tool_calls 的最终轮**才作为回答下发；
+# 下发时按块 + 小间隔回放，保留打字机观感（而不是憋到最后一次性弹出）。
+# 与模型行为无关，因此换模型/换提示词都不会再漏旁白。
+ANSWER_REPLAY_CHUNK = 12  # 每块字符数
+ANSWER_REPLAY_DELAY = 0.02  # 块间间隔（秒）→ 约 600 字/秒，接近真人阅读节奏
 
 
 def tool_to_function_schema(tool: ToolInfo) -> dict[str, Any]:
@@ -244,11 +264,13 @@ class AgentRunner:
     ) -> AsyncIterator[AgentEvent]:
         """流式执行一次 Agent 任务：步骤事件实时产出，最终回答逐字透传。
 
-        事件序列：step*（user/tool_select/...）→ token*（最终回答逐字）
+        事件序列：step*（user/tool_select/...）→ token*（最终回答逐块）
         → step(final) → done(response)。
         `key`：调用方 API Key（M1）——工具注入与调用均按其白名单收口。
         M3：命中固定回应策略时按同样的 SSE 事件序列下发配置话术（不走模型）；
         最终回答逐 token 经输出守门打码后再下发。
+        M6：**工具轮（决策轮）的文本不下发**——只有确定不含 tool_calls 的最终轮才作为
+        回答回放（见 ANSWER_REPLAY_CHUNK 的注释：这是旁白的结构性抑制，与模型行为无关）。
         """
         hit = self._match_policy(request.question)
         if hit is not None:
@@ -271,27 +293,31 @@ class AgentRunner:
         for rounds in range(1, max_rounds + 1):
             started = time.perf_counter()
             final_message: Message | None = None
-            content_parts: list[str] = []
+            round_text: list[str] = []  # 本轮文本先缓冲：轮末才知道它是回答还是旁白
             async for item in self._model.chat_stream(messages, tool_entries):
                 if item["type"] == "delta":
-                    content_parts.append(item["content"])
-                    safe = guard(item["content"])
-                    if safe:
-                        yield AgentEvent(type="token", text=safe)
+                    round_text.append(item["content"])
                 elif item["type"] == "message":
                     final_message = item["message"]
+            buffered = "".join(round_text)
             if final_message is None:
                 final_message = {
                     "role": "assistant",
-                    "content": "".join(content_parts) or "（模型未给出回答）",
+                    "content": buffered or "（模型未给出回答）",
                 }
             model_latency = (time.perf_counter() - started) * 1000
             tool_calls = final_message.get("tool_calls") or []
             if not tool_calls:
+                answer_text = buffered or str(final_message.get("content") or "")
+                for index in range(0, len(answer_text), ANSWER_REPLAY_CHUNK):
+                    safe = guard(answer_text[index : index + ANSWER_REPLAY_CHUNK])
+                    if safe:
+                        yield AgentEvent(type="token", text=safe)
+                    await asyncio.sleep(ANSWER_REPLAY_DELAY)
                 tail = masker.flush() if masker is not None else ""
                 if tail:
                     yield AgentEvent(type="token", text=tail)
-                streamed = masker.masked_full if masker is not None else "".join(content_parts)
+                streamed = masker.masked_full if masker is not None else answer_text
                 answer = self._mask(
                     streamed or str(final_message.get("content") or "（模型未给出回答）")
                 )
@@ -304,6 +330,9 @@ class AgentRunner:
                 )
                 return
 
+            # 工具轮：本轮文本属决策轮旁白，不进回答（只记日志，便于观测模型行为与调人设）
+            if buffered.strip():
+                logger.info("decision_round_text_dropped", chars=len(buffered), round=rounds)
             messages.append(final_message)
             for step in await self._execute_tool_calls(messages, tool_calls, key):
                 steps.append(step)

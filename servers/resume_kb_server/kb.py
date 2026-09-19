@@ -6,11 +6,12 @@
 
 检索为关键词加权打分（零依赖、零网络、无 embedding）：
 title ×3 / tags ×2 / 正文 ×1，再乘命中覆盖率；`type` 可作为过滤条件。
-召回用 `tags`（含雇主实名等别名），**展示一律用 `display_tags`**（见 NON_DISPLAY_ALIASES）。
+召回用 `tags`，**展示一律用 `display_tags`**（见 `display_aliases`）。
 """
 
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -37,24 +38,34 @@ FIELD_WEIGHTS = {"title": 3.0, "tags": 2.0, "body": 1.0}
 
 FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?", re.DOTALL)
 
-# 不可展示的召回别名（T4 裁决延伸，2026-09-16）：雇主实名等别名**只参与召回打分**，
-# 绝不进入交给模型/前端的文本——否则模型每次检索到这两张卡都会读到实名并可能照抄作答，
-# 「回答一律行业描述」只剩提示词级约束。
+# 不可展示的召回别名（雇主实名等）：**只参与召回打分，绝不进入交给模型/前端的文本**——
+# 否则模型每次检索到相关卡片都会读到实名并可能照抄作答，「回答一律行业描述」就只剩提示词级约束。
+#
 # 为什么收口在这里：这是**知识内容**层面的策略（与 FIELD_WEIGHTS、分词规则同类），
 # 过滤只由 `display_aliases` 一处实现，新加工具时不可能漏掉某个出口；且 kb.py 与 app/
 # 双向无依赖，本 Server 以 stdio 子进程方式单独运行时同样生效。
 # 为什么不塞进 output_guard（结论：不做）：那是 PII 打码器，按「保留前后位」等长打码，
-# 实名打码后仍留可识别前缀（「中电**」）且把答案改成残句；更关键的是，别名在出口已被
-# 结构性切断，唯一残余来源是面试官自己在提问里打出的公司名——对提问者隐藏他刚打的词
-# 只会产出破碎文本并暴露守门。口径纠正的正解是第 2 层（人设规则 + company_boundary）。
-NON_DISPLAY_ALIASES: tuple[str, ...] = ("中电福富", "海科新质", "海科")
+# 实名打码后仍留可识别前缀且把答案改成残句；更关键的是别名在出口已被结构性切断，
+# 唯一残余来源是面试官自己在提问里打出的公司名——对提问者隐藏他刚打的词只会产出破碎文本。
+#
+# 名单来源（2026-09-18 调整）：**仓库内不再保留任何实名**。知识卡的 tags 已改为行业描述，
+# 所以默认名单为空；若将来某张卡不得不带实名别名，由部署环境用逗号分隔的环境变量
+# `RESUME_KB_HIDDEN_ALIASES` 注入（与 app/ 无依赖，故直接读环境变量，不进 config.py）。
+HIDDEN_ALIASES_ENV = "RESUME_KB_HIDDEN_ALIASES"
+
+
+def hidden_aliases() -> tuple[str, ...]:
+    """当前生效的隐藏别名名单（默认空；每张卡渲染时读取，换环境变量无需重启）。"""
+    raw = os.getenv(HIDDEN_ALIASES_ENV, "")
+    return tuple(item.strip() for item in raw.split(",") if item.strip())
 
 
 def display_aliases(aliases: Iterable[str]) -> tuple[str, ...]:
-    """过滤出可展示的别名（保序）：含任一实名的别名一律剔除（实名作子串也剔除）。"""
-    return tuple(
-        alias for alias in aliases if not any(banned in alias for banned in NON_DISPLAY_ALIASES)
-    )
+    """过滤出可展示的别名（保序）：含任一隐藏实名的别名一律剔除（实名作子串也剔除）。"""
+    banned = hidden_aliases()
+    if not banned:
+        return tuple(aliases)
+    return tuple(alias for alias in aliases if not any(name in alias for name in banned))
 
 
 def _is_cjk(char: str) -> bool:

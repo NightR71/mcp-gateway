@@ -147,11 +147,12 @@ async def test_resume_static_assets_served(client: AsyncClient) -> None:
     assert "@media print" in css.text
 
 
-async def test_root_still_redirects_to_ui(client: AsyncClient) -> None:
-    """M4 不改变 `/` 的既有契约（仍指向 /ui 工作台）。"""
+async def test_root_redirects_to_chat(client: AsyncClient) -> None:
+    """M6 起 `/` 指向 /chat（业务应用为主入口）；/ui 页面与功能仍未改动、可直达。"""
     resp = await client.get("/", follow_redirects=False)
     assert resp.status_code in (302, 307)
-    assert resp.headers["location"] == "/ui"
+    assert resp.headers["location"] == "/chat"
+    assert (await client.get("/ui")).status_code == 200  # /ui 仍可直达，只是不再是默认落地页
 
 
 # ---------------------------------------------------------------------------

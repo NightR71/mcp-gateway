@@ -2,7 +2,7 @@
 id: project-ocean-nl2sql
 type: project
 title: "实习二 — 海洋数据自然语言查数（NL2SQL 专项）"
-tags: [海洋数据, 海洋数据科技, 海科, 海科新质, NL2SQL, 自然语言查数, 数据问答, Dify, Dify工作流, MCP Server, 达梦, 达梦数据库, BERT, 违规词, SQL注入, 护栏, 固定查询兜底, 分页, 实习二, 实习B]
+tags: [海洋数据, 海洋数据科技, NL2SQL, 自然语言查数, 数据问答, Dify, Dify工作流, MCP Server, 达梦, 达梦数据库, BERT, 违规词, SQL注入, 护栏, 固定查询兜底, 分页, 实习二, 实习B]
 related: [evidence-main-story, project-mcp-gateway, profile-basic]
 updated: 2026-09-14
 ---

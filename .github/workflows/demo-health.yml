@@ -234,7 +234,7 @@ jobs:
                   data=json.dumps({"question": question}).encode(),
                   headers={"X-API-Key": KEY, "Content-Type": "application/json"},
               )
-              tokens, kinds, errors = [], [], []
+              tokens, kinds, errors, done = [], [], [], None
               with urllib.request.urlopen(req, timeout=120) as resp:
                   raw = resp.read().decode("utf-8", "ignore")
               for frame in raw.split("\n\n"):
@@ -247,13 +247,22 @@ jobs:
                   if event == "token": tokens.append(payload.get("text", ""))
                   elif event == "error": errors.append(payload)
                   elif event == "step": kinds.append(payload["step"]["kind"])
-              return "".join(tokens), kinds, errors
+                  elif event == "done": done = payload
+              return "".join(tokens), kinds, errors, done
 
           failures = []
           for card, question in QUESTIONS:
-              answer, kinds, errors = ask(question)
+              answer, kinds, errors, done = ask(question)
               problems = []
               if errors: problems.append(f"error 事件 {errors}")
+              if done is None:
+                  problems.append("缺少 done 事件")
+              else:
+                  authoritative = done["response"].get("answer", "")
+                  # token 流必须与权威答案逐字一致（M6 旁白结构性抑制的在线不变量：
+                  # 决策轮文本既不进 token 流，也不进 response.answer）
+                  if authoritative != answer:
+                      problems.append("token 流与 response.answer 不一致")
               if "tool_call" not in kinds and "tool_result" not in kinds:
                   problems.append("没先检索（steps 里没有工具调用）")
               if len(answer.strip()) < 40: problems.append(f"答案过短（{len(answer)} 字）")

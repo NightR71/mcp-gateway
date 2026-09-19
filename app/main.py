@@ -194,8 +194,12 @@ def create_app() -> FastAPI:
 
     @app.get("/", include_in_schema=False)
     async def index() -> RedirectResponse:
-        # 保持既有契约（/ui 为基础设施侧演示入口）；简历助手入口是 /chat，页内可互相跳转
-        return RedirectResponse(url="/ui")
+        """/ 指向 /chat（M6 决策：业务应用为主入口，不再把网关工作台作为默认落地页）。
+
+        历史：M4 之前 / 指向 /ui（基础设施侧演示工作台）。M6 的诉求是"不再对外展示网关
+        入口、以简历助手为主入口"，故根路径改为 /chat；/ui 页面与功能一字未改，仍可直达。
+        """
+        return RedirectResponse(url="/chat")
 
     return app
 

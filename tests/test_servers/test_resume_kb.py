@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from servers.resume_kb_server.kb import (
+    HIDDEN_ALIASES_ENV,
     KnowledgeBase,
     display_aliases,
     parse_frontmatter,
@@ -34,7 +35,8 @@ PII_PATTERNS = {
     "id_card": re.compile(r"(?<!\d)\d{17}[0-9Xx](?!\d)"),
 }
 
-# 雇主实名：只允许出现在 tags 召回别名里，**正文与下发文本一律不得出现**（T4 裁决）。
+# 雇主实名：**任何地方都不得出现**——正文、下发文本、以及卡片的 tags（2026-09-18 用户决策：
+# 原先按 T4 裁决保留在 tags 里的召回别名改为行业描述；仓库是公开的，实名不再入库）。
 # 「海科」用简称即可覆盖「海科新质」（前者是后者的子串），一条断言拦两种写法。
 EMPLOYER_NAMES = ("中电福富", "海科")
 
@@ -94,11 +96,20 @@ def test_no_employer_names_in_card_body() -> None:
             assert name not in body, f"{path.name} 正文出现雇主名 {name}"
 
 
-def test_employer_aliases_present_in_tags() -> None:
-    """T4 裁决落实：公司名作为召回别名保留在两段实习卡的 tags 里。"""
+def test_employer_names_absent_from_tags() -> None:
+    """2026-09-18 决策：雇主实名不进任何卡片字段（含 tags），一律用行业描述。
+
+    替代原先的 `test_employer_aliases_present_in_tags`（T4 曾裁决"公司名仅作 tags 召回别名"）。
+    改动的自觉取舍：按公司名直呼的问法不再靠实名别名召回（见下方召回用例）。
+    """
     cards = {card.id: card for card in KnowledgeBase(KB_ROOT).cards}
-    assert "中电福富" in cards["project-internship-medical-saas"].tags
-    assert "海科" in cards["project-ocean-nl2sql"].tags
+    medical = cards["project-internship-medical-saas"]
+    ocean = cards["project-ocean-nl2sql"]
+    assert "医疗信息化" in medical.tags  # 行业描述别名照常参与召回
+    assert "海洋数据科技" in ocean.tags
+    for card in cards.values():
+        for name in EMPLOYER_NAMES:
+            assert name not in " ".join(card.tags), f"{card.id} 的 tags 出现雇主实名 {name}"
 
 
 def test_related_references_resolve(kb: KnowledgeBase) -> None:
@@ -228,28 +239,42 @@ async def test_get_profile_tool() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_display_aliases_drops_employer_names() -> None:
-    """过滤保序剔除实名别名；实名作子串的复合别名一并剔除，行业描述不误伤。"""
-    assert display_aliases(("实习", "中电福富", "海科新质", "海科", "基层医疗")) == (
+def test_display_aliases_drops_configured_hidden_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """过滤保序剔除隐藏别名；实名作子串的复合别名一并剔除，行业描述不误伤。
+
+    名单来自环境变量 `RESUME_KB_HIDDEN_ALIASES`（**仓库内不保留任何实名**）：
+    默认空 → 原样返回（知识卡 tags 已改为行业描述，无需过滤）；
+    部署时若要兜底，注入逗号分隔的名单即可。这里用合成名字验证机制。
+    """
+    assert display_aliases(("实习", "基层医疗")) == ("实习", "基层医疗")
+    monkeypatch.setenv(HIDDEN_ALIASES_ENV, "某甲公司,某乙公司")
+    assert display_aliases(("实习", "某甲公司", "某乙公司", "某乙公司数据专项", "基层医疗")) == (
         "实习",
         "基层医疗",
     )
-    assert display_aliases(("海科新质数据专项",)) == ()
+    assert display_aliases(("某乙公司数据专项",)) == ()
     assert display_aliases(("海洋数据科技", "达梦数据库")) == ("海洋数据科技", "达梦数据库")
     assert display_aliases(()) == ()
 
 
-def test_display_tags_keep_recall_tags_intact(kb: KnowledgeBase) -> None:
-    """两张实习卡：`tags` 保留实名（召回用），`display_tags` 剔除（展示用）。"""
-    cards = {card.id: card for card in kb.cards}
-    medical = cards["project-internship-medical-saas"]
-    assert "中电福富" in medical.tags
-    assert "中电福富" not in medical.display_tags
-    assert "基层医疗" in medical.display_tags  # 行业描述类别名照常展示
+def test_display_tags_drop_employer_names_if_ever_present(kb: KnowledgeBase) -> None:
+    """`display_tags` 仍是"实名不进模型上下文"的第二道防线（尽管 tags 已清干净）。
 
+    tags 里现在没有实名了（见 `test_employer_names_absent_from_tags`），但过滤逻辑保留：
+    万一将来有人把实名写回 tags，下发文本仍然不会带出去。
+    """
+    cards = {card.id: card for card in kb.cards}
+    for card in cards.values():
+        for name in EMPLOYER_NAMES:
+            assert name not in " ".join(card.display_tags), f"{card.id} 的 display_tags 出现实名"
+    medical = cards["project-internship-medical-saas"]
+    assert "基层医疗" in medical.display_tags  # 行业描述类别名照常展示
     ocean = cards["project-ocean-nl2sql"]
-    assert "海科" in ocean.tags and "海科新质" in ocean.tags
-    assert not any("海科" in tag for tag in ocean.display_tags)
+    assert "海洋数据科技" in ocean.display_tags
+    # 过滤函数本身的行为不变（合成输入，覆盖"实名 + 复合别名"两种写法）
+    assert display_aliases(("实习", "某公司名", "基层医疗")) == ("实习", "某公司名", "基层医疗")
 
 
 def test_card_renderers_never_emit_employer_names() -> None:
@@ -288,28 +313,34 @@ async def test_tool_outputs_to_model_never_contain_employer_names() -> None:
             assert name not in text, f"工具下发文本出现雇主实名 {name}"
 
 
-async def test_search_query_echo_is_the_only_place_the_alias_appears() -> None:
-    """实名只随面试官自己的问法回显，卡片文本里一次都不出现（下发的边界说清楚）。"""
+async def test_search_query_echo_is_the_only_place_the_name_appears() -> None:
+    """即使面试官在提问里打出公司名，实名也只随他自己的问法回显，卡片文本零实名。
+
+    注意这里**不断言召回**：2026-09-18 决策把实名从 tags 移除后，按公司名直呼的问法
+    只剩「实习」等通用词可匹配，命中哪张卡不再有保证（见 `test_industry_alias_queries_still_recall`
+    的取舍说明）。
+    """
     raw = await search_knowledge("中电福富实习", 5)
     echo, _, card_text = raw.partition("\n")
-    assert "中电福富" in echo  # 回显用户问法
-    assert "中电福富" not in card_text  # 卡片文本零实名
-    assert "project-internship-medical-saas" in card_text  # 回收敛：该问法确实召回了目标卡
+    assert "中电福富" in echo  # 回显用户问法（他自己的词）
+    assert "中电福富" not in card_text  # 卡片文本零实名（结构性保证）
 
 
-def test_alias_queries_still_recall_by_employer_name(kb: KnowledgeBase) -> None:
-    """② 别名召回不因「过滤展示」而下降：实名/简称问法与同义说法都仍命中对应卡。
+def test_industry_alias_queries_still_recall(kb: KnowledgeBase) -> None:
+    """实名转行业描述后，召回不下降：行业词、同义说法、技术词都仍命中对应卡。
 
-    过滤只作用于渲染（display_tags），打分仍用全部 tags——本用例钉住 T4 语义不变。
+    **自觉取舍（2026-09-18）**：按公司名直呼的问法不再保证命中——实名已从 tags 移除，
+    「海科实习做的是什么方向」这类问法只剩「实习」一个可匹配词，可能落到别的实习卡上。
+    兜底路径是人设的「检索不到依据时用固定话术 + 说明可聊主题」，而不是把实名放回知识库。
     """
     cases = [
-        ("中电福富实习主要做了什么", "project-internship-medical-saas"),
-        ("海科新质那段实习是什么", "project-ocean-nl2sql"),
-        ("海科实习做的是什么方向", "project-ocean-nl2sql"),
-        # 同义说法（不含实名）：行业描述措辞
+        # 行业描述别名（替代原先的实名别名）
+        ("医疗信息化实习主要做了什么", "project-internship-medical-saas"),
+        ("海洋数据科技那段实习是什么", "project-ocean-nl2sql"),
+        # 同义说法（不含实名）
         ("央企背景软件服务商的实习做了什么", "project-internship-medical-saas"),
         ("海洋数据自然语言查数专项怎么做的", "project-ocean-nl2sql"),
-        # 兜底：只报行业词时也不能召回下降
+        # 兜底：只报行业词/技术词时也不能召回下降
         ("基层医疗公共卫生的随访怎么做", "project-internship-medical-saas"),
         ("NL2SQL 是怎么保障可用性的", "project-ocean-nl2sql"),
     ]

@@ -38,11 +38,11 @@ async def test_ui_flow_panel_present(client: AsyncClient) -> None:
     assert "flow-dot" in resp.text
 
 
-async def test_root_redirects_to_ui(client: AsyncClient) -> None:
-    """GET / 302/307 重定向到 /ui。"""
+async def test_root_redirects_to_chat(client: AsyncClient) -> None:
+    """GET / 302/307 重定向到 /chat（M6 决策：业务应用为主入口；/ui 页面与功能一字未改）。"""
     resp = await client.get("/", follow_redirects=False)
     assert resp.status_code in (302, 307)
-    assert resp.headers["location"] == "/ui"
+    assert resp.headers["location"] == "/chat"
 
 
 async def test_agent_run_still_requires_key(gateway_client: AsyncClient) -> None:

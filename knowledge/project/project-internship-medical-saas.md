@@ -2,7 +2,7 @@
 id: project-internship-medical-saas
 type: project
 title: "实习一 — 基层医疗公共卫生 SaaS 微服务（随访/数据要素服务）"
-tags: [实习, 实习一, 实习A, 中电福富, 基层医疗, 公共卫生, 随访, 微服务, Spring Cloud, Java, Feign, Nacos, RabbitMQ, MyBatis, PostgreSQL, Excel, 批量导入, 数据导入, 多租户, 事务, 幂等, N+1, 数据回填]
+tags: [实习, 实习一, 实习A, 医疗信息化, 基层医疗, 公共卫生, 随访, 微服务, Spring Cloud, Java, Feign, Nacos, RabbitMQ, MyBatis, PostgreSQL, Excel, 批量导入, 数据导入, 多租户, 事务, 幂等, N+1, 数据回填]
 related: [evidence-main-story, evidence-jd-mapping, qa-storage-infra, profile-basic]
 updated: 2026-09-14
 ---

@@ -39,7 +39,7 @@ updated: 2026-09-14
 
 ## 结果
 
-- **371 项测试通过、1 项按环境跳过**（2026-09-18 `uv run pytest` 实测，随跑随更）；含 stdio/SSE/HTTP 真实子进程集成测试、inprocess 加载生产配置回归、kill 下游 Server 的故障注入自愈测试、安全加固用例（白名单击穿拦截 / 入参设界 / 错误脱敏 / 小时桶）。
+- **372 项测试通过、1 项按环境跳过**（2026-09-18 `uv run pytest` 实测，随跑随更）；含 stdio/SSE/HTTP 真实子进程集成测试、inprocess 加载生产配置回归、kill 下游 Server 的故障注入自愈测试、安全加固用例（白名单击穿拦截 / 入参设界 / 错误脱敏 / 小时桶）。
 - GitHub Actions CI（push/PR 自动 `uv sync --locked` + Ruff + pytest）；ruff check 与 format 全过。
 - Docker 双容器部署 + Vercel Serverless 部署，线上可体验：https://mcpgatewaydemo1.vercel.app/ui
 - MIT 开源（GitHub 仓库地址 `GITHUB_REPO_URL` 占位保留，T6 已定：暂不展示；被问仓库链接 → 「开源仓库详情建议直接与本人确认，线上演示入口在页面即可体验」）。
@@ -77,5 +77,5 @@ updated: 2026-09-14
 ## 可验证证据
 
 - 本仓库 README「设计决策与踩坑（ADR）」六条（含 M1 新增两条：SSE 中间件、脱敏收口）。
-- `uv run pytest` → 371 passed / 1 skipped（2026-09-18 实测）；`.github/workflows/ci.yml`；`vercel.json`、`docker-compose.yml`、`config/` 三套平台配置。
+- `uv run pytest` → 372 passed / 1 skipped（2026-09-18 实测）；`.github/workflows/ci.yml`；`vercel.json`、`docker-compose.yml`、`config/` 三套平台配置。
 - 线上体验：https://mcpgatewaydemo1.vercel.app/ui （演示 Key 见 README，公开信息）。
