@@ -179,9 +179,14 @@ jobs:
           echo "probe_model=$RUN"
           echo "run=$RUN" >> "$GITHUB_OUTPUT"
           if [ "$RUN" = "0" ]; then echo "跳过（本时段不打真模型，成本红线）"; exit 0; fi
-          curl -sN --max-time 90 -X POST "$BASE/agent/run/stream" \
+          # -w 打印 wire 级计时：time_starttransfer 即首字节到达时间（M5 §7.2 遗留项：
+          # 本机实测 1.5–2.8s 且已排除应用层积压，需从海外 Runner 复测一次判定是否为
+          # 本机网络路径问题）。-o 只重定向正文，计时行留在日志里。
+          curl -sN --max-time 90 -o /tmp/stream.txt \
+            -w '\nTTFB=%{time_starttransfer}s total=%{time_total}s\n' \
+            -X POST "$BASE/agent/run/stream" \
             -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
-            -d '{"question":"这个网关最难的三个坑是什么？"}' > /tmp/stream.txt
+            -d '{"question":"这个网关最难的三个坑是什么？"}'
           tail -3 /tmp/stream.txt
           python3 - <<'PY'
           import json, re

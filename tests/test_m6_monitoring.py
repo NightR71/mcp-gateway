@@ -96,6 +96,8 @@ def test_workflow_probes_real_model_at_most_daily_and_notifies_on_failure() -> N
     # 定时场景下必须按小时门控（只有命中该小时才真打模型）
     assert re.search(r"date -u \+%H", probe["run"]), "真模型探测没有按小时门控，可能每 6 小时都打"
     assert "probe_model" in yaml.safe_dump(probe), "真模型探测缺少手动开关"
+    # wire 级首字节计时（M5 §7.2 遗留项）：复用同一次探测请求测量，不额外产生模型调用
+    assert "time_starttransfer" in probe["run"], "真模型探测没有测 wire 级首字节（M5 §7.2）"
 
     notify = next((s for s in steps if s.get("if") == "failure()"), None)
     assert notify is not None, "失败没有任何告警步骤"
