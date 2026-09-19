@@ -3,26 +3,83 @@
 gateway:
   app_name: mcp-gateway
   log_level: INFO
+  # M6 三态公开开关的权威落点（决策 8）：面试季保持 public，非面试季改成 closed 后
+  # 推送到 main 即自动部署生效（约 1–2 分钟）。也可用环境变量 GATEWAY_PUBLIC_MODE
+  # 覆盖（优先级更高），详见 docs/M6-部署操作手册.md §3.4。
+  public_mode: public
+  # 多实例 Serverless 无共享状态：开关只读，改值必须改配置并重新部署（确定性最高）。
+  public_mode_store: config
 
 auth:
   db_path: /tmp/gateway.db
+  # admin：管理员 Key 的配额（**这里没有也不会有 Key 值**）：管理 Key 唯一来源是环境变量
+  # GATEWAY_ADMIN_KEY，由鉴权入口按请求现算，不落库、不进仓库。
+  admin:
+    tenant: admin
+    rate_limit_per_minute: 30
+    rate_limit_per_hour: 300
   api_keys:
-    - key: dev-key-please-change
-      name: demo
-      rate_limit_per_minute: 60
+    # M3：访客只读 Key（招聘方浏览器端；工具白名单仅 resume_kb__*；50 次/小时）
+    # M6：线上**唯一能触发真模型**的公开 Key（/chat 页面需要它），
+    # `agent_allowed: true` 是显式放行；成本由 50 次/小时 + 10 次/分钟 + 三态开关兜住。
+    - key: visitor-key-please-change
+      name: visitor
+      tenant: visitor
+      rate_limit_per_minute: 10
+      rate_limit_per_hour: 50
+      agent_allowed: true
+      allowed_tools:
+        - resume_kb__*
+    # M6 移除：原 `dev-key-please-change`（60/min、全量工具、无小时桶）曾是公开演示 Key，
+    # 已被 README 与 /ui placeholder 公开印出 → 视为已泄露，不再出现在线上配置里。
+    # 契约测试钉住：本文件除 visitor 外的任何 Key 必须 `agent_allowed: false`
+    # （见 tests/test_m6_config_contract.py），即"公开 Key 即便泄露也烧不到模型余额"。
+
+    # M6 能力位在线验证 Key：**只能调 MCP 工具、不能触发模型**（agent_allowed: false）。
+    # 用途：让「能力位收口」这条红线在线上**可持续验证**——拨测每 6 小时断言一次
+    # 「用它能调工具（200）、调 /agent/run 被拒（403）」，而不是只在报告里写一句"已实现"。
+    # 风险面：只读知识库（与公开的 visitor Key 看到的工具集相同、配额更低），零模型成本。
+    - key: tools-only-key-please-change
+      name: tools-only
+      tenant: tools-only
+      rate_limit_per_minute: 6
+      rate_limit_per_hour: 20
+      agent_allowed: false
+      allowed_tools:
+        - resume_kb__*
 
 # demo server 走 inprocess：在网关进程内直接加载，不拉子进程。
 # 原因：Vercel Serverless 子进程的解释器看不到构建期安装的依赖（ModuleNotFoundError: mcp），
 # 进程内加载与网关共用同一份 site-packages，彻底消除解释器环境差异。
 # SQLite 优先取环境变量 DEMO_SQL_DB_PATH，缺省 data/demo_sql.db 不可写时自动回退 /tmp。
+# M3：resume_kb 同样走 inprocess（只读知识库，无子进程、无端口、无状态）。
 servers:
   - name: demo_sql
     transport: inprocess
     module: servers.demo_sql_server.server:server
+  - name: resume_kb
+    transport: inprocess
+    module: servers.resume_kb_server.server:server
 
-# 公网工作台演示：mock 模式 Agent（不需要 LLM Key，Serverless 冷启动首请求 1-3 秒）
+# 线上 Agent：真实模型（DeepSeek，OpenAI 兼容端点）。凭据只走环境变量
+# GATEWAY_AGENT_API_KEY（Vercel 控制台填写），本文件零凭据。
+# - 模型名 `deepseek-flash`（2026-09-18 用户决策迁移）：官方文档列出的现役名字，
+#   旧名 `deepseek-chat` 已不在文档的模型清单里（M5 §7.8 的待查项据此闭环）。
+#   与 config/gateway.real.yaml 必须保持一致（有测试钉住）。
+#   注意：**迁移模型属于 M6 规定"必须重跑冒烟"的变更**——本轮未在本机重跑（本机无 Key），
+#   已如实记入 docs/M6-上线报告.md §4.1 与 §5，行为验证由线上复验 + 拨测承担。
+# - `model_connect_retries` 不显式写：用默认值 10（M5 实测口径，见 app/config.py 的长注释）。
+# - temperature 由 app/agent/models.py 固定为 0，保证同一问题答案稳定可回归。
+# - 简历 Agent 为 real-model-only：没有 Key 或模型不可用时 /chat 显示维护页，
+#   绝不用 mock 剧本冒充回答（执行计划 §2 决策 6）——所以本文件里没有 mock 开关。
 agent:
   enabled: true
-  mock: true
+  mock: false
+  model: deepseek-flash
+  base_url: https://api.deepseek.com/v1
   max_rounds: 8
   routing_top_k: 10
+
+# M3 应用层配置（人设 / 红线拒答 / 输出守门）已独立到 config/resume_kb.yaml：
+# 那部分是业务应用层配置、与部署平台无关，故不在各平台配置里留副本（避免漂移）。
+# 本文件只管平台差异：server 传输方式、Key 与配额。

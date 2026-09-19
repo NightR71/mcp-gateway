@@ -3,7 +3,7 @@
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-asyncio-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![MCP](https://img.shields.io/badge/MCP-官方SDK-8A2BE2)](https://modelcontextprotocol.io/)
-[![Tests](https://img.shields.io/badge/tests-156%20passed-3FB950)](.github/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-261%20passed-3FB950)](.github/workflows/ci.yml)
 [![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?logo=githubactions&logoColor=white)](.github/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
@@ -11,10 +11,14 @@
 
 ## 在线体验
 
-**https://mcpgatewaydemo1.vercel.app/ui**
+**https://mcpgatewaydemo1.vercel.app/chat** —— 交互式 AI 简历助手（本仓库的业务应用，推荐从这里开始）
 
-- 打开即用：右上角填入演示 Key `dev-key-please-change`，输入中文问题（如「查询目前销售额最高的商品」），观察完整的 **Agent 工具选择 → 网关鉴权限流 → MCP 调用 → 结果回填 → 流式回答** 链路时间线，右侧同步演示网关运行流程动画。
-- Serverless 部署（demo server 进程内加载，冷启动 1–3 秒属正常）；`*.vercel.app` 在中国大陆受 DNS 污染可能无法直连，海外网络或 GitHub Actions（`demo-health` workflow）可直接验收。
+- 打开即用、无需填任何 Key：点右侧项目气泡卡（如「这个网关最难的三个坑是什么？」）或直接提问，观察 **访客鉴权 → 令牌桶限流 → 语义检索知识卡片 → DeepSeek 生成 → SSE 逐字回填** 的完整链路，右栏流程图的节点由真实 `step` 事件逐步点亮。
+- `/resume` 为同源挂载的脱敏简历页，界面常驻入口。
+- Serverless 部署（MCP Server 进程内加载，冷启动 1–3 秒属正常）；`*.vercel.app` 在中国大陆受 DNS 污染可能无法直连，海外网络或 GitHub Actions（`demo-health` workflow）可直接验收。
+
+> **网关侧工作台 `/ui` 仍可访问**（纯静态页面，页面与功能未做删改），但**不再对外发布演示 Key**：公开仓库与页面里不再提供可直接使用的网关 Key，所以它在公网状态下只能看界面、跑不出调用结果。
+> 想完整走一遍基础设施侧演示（Agent 工具选择 → 网关鉴权限流 → MCP 调用 → 结果回填 → 流式回答），请在本地按「快速开始」起服务——`config/gateway.yaml` 是 mock 离线配置，零 token、零外部依赖。
 
 ![Agent Workbench 运行效果](assets/workbench.png)
 
@@ -39,6 +43,8 @@
 - **可靠性**：失败 Server 指数退避自动重连（2s→60s）、`asyncio.timeout` 调用总超时（502 明确提示）、`classify_error` 按 MCP SDK 错误码分类（识别 `-32000` 断连 / `-32001` 超时）
 - **可观测**：structlog 结构化 JSON 日志 + Prometheus 指标（工具调用次数/耗时，按 tool/server/status 维度）
 - **交互工作台 `/ui`**：纯静态三件套（零构建链、零 CDN），调用链时间线 + SQL 高亮/表格富渲染 + 运行流程 SVG 动画
+- **简历知识库（业务应用，M3/M4）**：`servers/resume_kb_server/` 只读工具集（`search_knowledge` / `get_card` / `list_cards` / `get_profile`），检索 `knowledge/` 下的 Markdown 知识卡片（YAML frontmatter + 中文 2-gram 检索）；配套人设系统提示词、红线固定回应（命中即不走模型）与输出守门（流式滑动窗口 PII 打码）——全部配置化于 `config/resume_kb.yaml`；访客 Key 白名单通配 `resume_kb__*`
+- **简历助手前端 `/chat`（M4）**：纯静态移动端优先三区布局（主体对话流 / 右栏项目气泡卡 + 简历卡 / 对话态运行流程图），SSE 逐字渲染；运行流程由**真实 `step` 事件驱动节点逐个点亮**（流式异常才降级为预定义示意）；窄屏下气泡横向滚动、对话与流程可切换；无模型或未放行演示时显示维护页，不用假剧本冒充回答；`/resume` 为脱敏简历页（零联系方式、零成绩主张、雇主行业描述）
 
 ## 快速开始
 
@@ -54,7 +60,7 @@ docker compose up --build                 # Docker 双容器部署（gateway + d
 常用接口：
 
 ```bash
-KEY="dev-key-please-change"   # 演示 Key，见 config/gateway.yaml
+KEY="dev-key-please-change"   # 本地演示 Key（见 config/gateway.yaml；线上不提供公开演示 Key）
 
 curl http://localhost:8000/health
 curl -H "X-API-Key: $KEY" "http://localhost:8000/tools?query=销售额&top_k=2"
@@ -116,6 +122,8 @@ uv run --group agent python examples/langchain_agent.py "有多少客户？"  # 
 2. **MCP SDK 2.0.0 的 `streamable_http_client` 只 yield 2 元组**（旧教程为 3 元组），该缺陷潜伏到 Docker 冒烟才暴露 → 以实装 SDK 为准适配，并补独立 http 子进程集成测试。*集成测试兜住 SDK 版本差异。*
 3. **SDK 2.x 把对端断连包装成 `MCPError(-32000)`**，不是 Python `ConnectionError`——按传统异常类型判断会漏判、自愈不触发 → `classify_error()` 按 SDK 错误码分类（`-32000` 断连 / `-32001` 读超时）。*自愈闭环的最后一公里。*
 4. **`*.vercel.app` 大陆 DNS 污染**无法自验线上 → 用 GitHub Actions `demo-health` workflow 从海外 Runner 跑 4 步验收。*工程闭环不依赖本地网络。*
+5. **ASGI 中间件伪造 `http.disconnect` 会腰斩 SSE**：请求体限流中间件初版在请求体交付后直接返回断连，被 Starlette `StreamingResponse` 的并发断连监听当作客户端断开并取消整个响应流（uvicorn 实测 SSE 只剩 2 个事件、`done` 丢失，日志报 `ASGI callable returned without completing response`）。httpx 测试恰好掩盖了它——其 `receive()` 会等响应完成后才返回断连 → 请求体交付后一律**委托真实 `receive`**，并补「读完体后挂起」的确定性回归测试。*测试客户端与真实服务器的语义差异会掩盖缺陷，流式改动必须真机复验。*
+6. **脱敏只做在路由层 = 留后门**：安全加固把 4 处路由 5xx 改成不透明文案后，Agent 循环内部仍有一条出口——工具调用失败被循环自己捕获，`f"工具调用失败：{exc}"` 随响应 `steps` 与 SSE 逐条事件直达公网访客（还回填模型上下文）。修法是把 `log_and_hide` 下沉到 `core/` 供接口层与 Agent 层共用，循环内只对**预期内工具错误**保留可读文案。*与白名单同样的道理：横切能力必须收口到唯一位置，一处漏掉等于没做。*
 
 ## 配置
 
@@ -125,15 +133,24 @@ uv run --group agent python examples/langchain_agent.py "有多少客户？"  # 
 gateway:
   port: 8000
   tool_call_timeout: 30.0     # 单次工具调用总时长兜底
+  max_request_body_bytes: 1000000   # 请求体上限（超限 413；限流限次数，这里限单次体积）
+  public_mode: public         # 三态公开开关：public / internal / closed（默认 closed=fail-closed）
+  public_mode_store: process  # 单进程部署可写（/admin/mode 即时切换）；多实例 Serverless 用 config（只读）
 auth:                          # API Key 鉴权（SQLite 存储，启动种子写入）
   api_keys:
     - { key: dev-key-please-change, name: demo, tenant: demo, rate_limit_per_minute: 60 }
     - { key: limited-tools-key, name: limited-tools, tenant: demo,
         rate_limit_per_minute: 60, allowed_tools: ["demo_sql__ask"] }   # 白名单演示
+    # agent_allowed: false    # 可选：该 Key 只能调 MCP 工具，不能触发 Agent（模型调用）
+    # rate_limit_per_hour: 50  # 可选：每小时配额（小时桶，慢速补充）
+  # 管理员 Key 的配额（凭据只走环境变量 GATEWAY_ADMIN_KEY，不落 YAML / 不落库）
+  admin: { tenant: admin, rate_limit_per_minute: 30, rate_limit_per_hour: 300 }
 routing:                       # 语义工具路由
   { enabled: true, top_k: 10, min_tools: 3 }
 agent:                         # 网关内 Agent（mock 开箱即用；真实模型配 GATEWAY_AGENT_API_KEY）
   { enabled: true, mock: true, model: gpt-4o-mini, max_rounds: 8 }
+metrics:                       # 默认不暴露；开启后默认要求 API Key（本机/内网可设 require_auth: false）
+  { enabled: false, require_auth: true }
 servers:                       # MCP Server 声明式接入，无需改代码
   - name: demo_sql
     transport: stdio           # stdio / sse / http / inprocess
@@ -146,7 +163,7 @@ Streamable HTTP，网关经 `http://demo_sql:9001/mcp` 连接。
 
 ## 测试与质量
 
-- **156 项测试**（`uv run pytest`）：stdio/SSE/HTTP 真实子进程集成测试、inprocess 加载 Vercel 生产配置回归测试、kill 下游 Server 后自动恢复的故障注入测试
+- **261 项测试**（`uv run pytest`，另有 1 例按环境跳过）：stdio/SSE/HTTP 真实子进程集成测试、inprocess 加载 Vercel 生产配置回归测试、kill 下游 Server 后自动恢复的故障注入测试、安全前置用例（白名单击穿拦截 / 入参设界 413·422 / 错误不透明化含 Agent 步骤出口 / 小时桶 + /metrics 策略）、简历知识库用例（知识库数据质量含 PII 零入断言 / 语义召回 / 白名单通配 / 人设注入与固定回应 / 输出守门流式打码）
 - `ruff check` + `ruff format --check` 全过；GitHub Actions 在 push / PR 时执行 `uv sync --locked` + Ruff + pytest
 - 兼容红线：`/tools`、`/tools/{name}/call`、`/servers` 等公开契约只做增量扩展；examples/ 与网关双向无依赖
 
@@ -156,16 +173,21 @@ Streamable HTTP，网关经 `http://demo_sql:9001/mcp` 连接。
 app/
 ├── main.py          FastAPI 入口（lifespan：registry / key_store / rate_limiter / agent）
 ├── config.py        配置中心（默认值 < YAML < 环境变量）
-├── core/            security / rate_limit / logging / metrics
+├── core/            security / rate_limit / logging / metrics / body_limit / errors
+│                    output_guard（M3 输出守门：流式滑窗 PII 打码）
 ├── mcp/             transports · client · registry · tool_router · schemas
-├── agent/           AgentRunner · Model Protocol（OpenAI 兼容 / Mock）
-├── api/             deps.py 依赖注入 + routes/（tools · servers · agent · health）
-├── schemas/         Pydantic 请求/响应模型
-└── ui/              浏览器工作台（纯静态 HTML/CSS/JS）
+├── agent/           AgentRunner · Model Protocol（OpenAI 兼容 / Mock）· persona（M3 人设）
+├── api/             deps.py 依赖注入 + routes/（tools · servers · agent · health · metrics）
+├── schemas/         Pydantic 请求/响应模型（含 /chat 前端契约）
+├── ui/              浏览器工作台（纯静态 HTML/CSS/JS，基础设施侧演示入口）
+├── chat/            简历助手对话页（M4：三区布局 + 真实 step 点亮流程图 + 维护态）
+└── resume/          脱敏简历页（M4：零联系方式 / 零成绩主张 / 雇主行业描述）
 servers/demo_sql_server/   示例 MCP Server（4 工具，NL2SQL 双引擎，只读校验）
+servers/resume_kb_server/  简历知识库只读 MCP Server（M3：4 检索工具 + 卡片加载/打分）
+knowledge/                 知识卡片（Markdown + YAML frontmatter，只读加载）
 examples/                  OpenAI function-calling 与 LangChain 调用网关的 Agent 示例
 tests/                     与 app 结构对应的单元/集成测试
-config/                    本地 stdio / Docker http / Vercel inprocess 三套配置
+config/                    各平台配置（本地 stdio / Docker http / Vercel inprocess）+ resume_kb.yaml
 ```
 
 ## Roadmap
@@ -173,6 +195,9 @@ config/                    本地 stdio / Docker http / Vercel inprocess 三套�
 - [x] 四传输 MCP 接入 + 工具注册中心 + 统一 REST API + 鉴权限流 + 可观测
 - [x] 语义工具路由 + 网关内 Agent + /ui 工作台 + SSE 流式
 - [x] NL2SQL 双引擎（规则 + LLM）+ 多租户/工具白名单 + 断线自愈/总超时/错误分类
+- [x] 安全加固：白名单收口到调用点 + 入参设界（长度/轮数/体积）+ 内部错误脱敏 + /metrics 默认关闭 + 小时桶限流
+- [x] 简历知识库只读服务（M3）：`resume_kb` 工具集 + 知识卡片检索 + 人设系统提示词 + 红线固定回应 + 流式输出守门（PII 打码）+ 访客白名单通配
+- [x] 简历助手前端（M4）：`/chat` 三区布局 + 真实 step 点亮流程图 + 维护态（real-model-only）+ `/resume` 脱敏简历页；移动端优先（窄屏气泡横滚与对话/流程切换）
 - [ ] embedding 语义路由（Scorer 已预留接口）
 - [ ] Redis 分布式限流 + Key 哈希存储
 - [ ] OpenTelemetry 链路追踪 / 压测报告

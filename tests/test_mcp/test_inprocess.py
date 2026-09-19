@@ -76,19 +76,29 @@ async def test_bad_module_does_not_block() -> None:
 
 
 async def test_vercel_config_loads_inprocess(monkeypatch: pytest.MonkeyPatch) -> None:
-    """直接加载生产 Vercel 配置：demo_sql 必须以 inprocess 连接并注册 4 个工具。"""
+    """直接加载生产 Vercel 配置：全部 server 必须以 inprocess 连接并注册各自工具。
+
+    Vercel（Serverless）拉不起子进程，所以该配置里**每一个** server 都必须是
+    inprocess——M3 新增 resume_kb 后同样如此，本用例按 server 名逐个校验。
+    demo_sql 4 个工具 + resume_kb 4 个只读工具 = 8。
+    """
     monkeypatch.setenv("GATEWAY_CONFIG_FILE", VERCEL_CONFIG)
     get_server_configs.cache_clear()
     configs = get_server_configs()
 
-    assert len(configs) == 1
-    assert configs[0].transport == "inprocess"
-    assert configs[0].module == "servers.demo_sql_server.server:server"
+    by_name = {config.name: config for config in configs}
+    assert set(by_name) == {"demo_sql", "resume_kb"}
+    for name, config in by_name.items():
+        assert config.transport == "inprocess", f"{name} 在 Vercel 配置里必须走 inprocess"
+    assert by_name["demo_sql"].module == "servers.demo_sql_server.server:server"
+    assert by_name["resume_kb"].module == "servers.resume_kb_server.server:server"
 
     r = ToolRegistry(configs)
     await r.connect_all()
-    assert len(r.list_tools()) == 4
+    tools = r.list_tools()
+    assert len(tools) == 8
+    assert sum(1 for tool in tools if tool.name.startswith("resume_kb__")) == 4
     status = r.server_status()
-    assert status[0].connected is True
-    assert status[0].error is None
+    assert all(item.connected for item in status)
+    assert all(item.error is None for item in status)
     await r.close()

@@ -7,13 +7,24 @@ from pydantic import BaseModel, Field
 # 步骤类型（与阶段 3 工作台时间线一一对应）
 AgentStepKind = Literal["user", "tool_select", "tool_call", "tool_result", "final"]
 
+# 入参设界（M1 §5.3）：限流限的是次数，以下两界限的是单次成本
+# ——接真实 LLM 后超长 question 与超大 max_rounds 都是成本放大器
+QUESTION_MAX_LENGTH = 2000
+MAX_ROUNDS_LIMIT = 20
+
 
 class AgentRequest(BaseModel):
     """POST /agent/run 的入参。"""
 
-    question: str = Field(description="用户问题")
+    question: str = Field(
+        max_length=QUESTION_MAX_LENGTH,
+        description=f"用户问题（最长 {QUESTION_MAX_LENGTH} 字符）",
+    )
     max_rounds: int | None = Field(
-        default=None, description="覆盖配置的最大往返轮数（不传用配置值）"
+        default=None,
+        ge=1,
+        le=MAX_ROUNDS_LIMIT,
+        description=f"覆盖配置的最大往返轮数（1~{MAX_ROUNDS_LIMIT}，不传用配置值）",
     )
 
 

@@ -1,0 +1,64 @@
+# 简历知识库测试配置（M3）：conftest 的 resume_kb_client fixture 通过 GATEWAY_CONFIG_FILE 指向本文件
+# 与 gateway_test.yaml 的区别：servers 只有 resume_kb（工具总数为 4，便于断言白名单收窄后
+# 「可见工具 == 该 server 全部工具」）；额外提供 visitor 系测试 Key 覆盖白名单与限流。
+gateway:
+  app_name: mcp-gateway-resume-kb-test
+  log_level: WARNING
+  max_request_body_bytes: 20000
+  # M6 三态开关默认 closed（fail-closed）：夹具显式开 public，否则 Agent 用例全 503
+  public_mode: public
+
+routing:
+  enabled: true
+  top_k: 10
+  # resume_kb 共 4 个工具 > 2 → query 过滤生效（专测语义路由召回）
+  min_tools: 2
+
+agent:
+  enabled: true
+  mock: true
+  max_rounds: 8
+  routing_top_k: 10
+
+auth:
+  db_path: ":memory:"
+  api_keys:
+    # 全量 Key（测试辅助：验证 resume_kb 工具可见、非白名单场景）
+    - key: test-key
+      name: tester
+      rate_limit_per_minute: 60
+    # M3 主角：访客只读 Key —— 白名单仅 resume_kb__*（通配前缀），50 次/小时
+    - key: visitor-key-please-change
+      name: visitor
+      tenant: visitor
+      rate_limit_per_minute: 10
+      rate_limit_per_hour: 50
+      allowed_tools:
+        - resume_kb__*
+    # 低配额访客 Key：分钟 2 次（专测 429）
+    - key: visitor-limited-key
+      name: visitor-limited
+      tenant: visitor
+      rate_limit_per_minute: 2
+      allowed_tools:
+        - resume_kb__*
+    # 小时桶 Key：分钟额度充足、每小时 2 次（专测访客场景小时限流语义）
+    - key: visitor-hourly-key
+      name: visitor-hourly
+      tenant: visitor
+      rate_limit_per_minute: 100
+      rate_limit_per_hour: 2
+      allowed_tools:
+        - resume_kb__*
+    # 反向白名单 Key：只允许 demo_sql（本配置里无此 server）→ 可见工具数为 0，
+    # 用于验证「白名单外一律不可见/不可调」
+    - key: no-kb-key
+      name: no-kb
+      rate_limit_per_minute: 60
+      allowed_tools:
+        - demo_sql__*
+
+servers:
+  - name: resume_kb
+    transport: inprocess
+    module: servers.resume_kb_server.server:server

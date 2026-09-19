@@ -1,0 +1,109 @@
+# ============================================================================
+# M5 真模型冒烟配置（DeepSeek）——本地/内网冒烟专用，不用于对外部署
+#
+# 用法（Key 只走环境变量，绝不写进本文件）：
+#   GATEWAY_CONFIG_FILE=config/gateway.real.yaml \
+#   GATEWAY_AGENT_API_KEY=<DeepSeek Key> \
+#   uv run uvicorn app.main:app --port 8000
+#
+# 为什么另起一个文件而不是改 config/gateway.yaml：
+#   `agent` 配置节只从 YAML 读取（app/config.py 的 get_agent_config() 不走
+#   GATEWAY_ 环境变量，见 AGENTS.md 与 M5 已知坑），`mock` 无法用环境变量覆盖。
+#   两条路径并存——config/gateway.yaml 保持 mock 离线演示可跑，
+#   本文件只把 agent 切到真实模型，servers/auth 与本地配置逐字一致。
+#
+# 安全红线：本文件**不含任何模型凭据**——DeepSeek Key 唯一来源是环境变量
+#          GATEWAY_AGENT_API_KEY（app/main.py 读取后交给 httpx），不落任何文件。
+#          下面 auth.api_keys 的 4 个网关 Key 是本地演示占位口令（与 config/gateway.yaml
+#          同惯例：字面量自带 please-change、本身公开），不是外部服务凭据，
+#          也不用于访问任何第三方服务。
+# ============================================================================
+gateway:
+  app_name: mcp-gateway
+  version: 0.1.0
+  host: 0.0.0.0
+  port: 8000
+  log_level: INFO
+  tool_call_timeout: 30.0
+  # M6 三态公开开关（决策 8）：本机单进程冒烟，显式开 public + 允许就地切换
+  public_mode: public
+  public_mode_store: process
+
+# 鉴权与本地配置一致（冒烟用访客 Key，验证「真模型下白名单仍只放行 resume_kb__*」）
+# db_path 单独一个文件：冒烟会把 smoke 迭代 Key 种子写库，不该污染 /ui 工作台演示用的
+# data/gateway.db（两者都会读同一份 api_keys，但各自落各自的库，互不写入）。
+auth:
+  db_path: data/gateway.real.db
+  api_keys:
+    - key: dev-key-please-change
+      name: demo
+      tenant: demo
+      rate_limit_per_minute: 60
+    - key: limited-tools-key
+      name: limited-tools
+      tenant: demo
+      rate_limit_per_minute: 60
+      allowed_tools:
+        - demo_sql__ask
+    # 冒烟主用 Key：只读简历知识库 + 50 次/小时（公网成本护栏的口径）
+    # M6：显式放行 Agent（真模型冒烟的入口身份）
+    - key: visitor-key-please-change
+      name: visitor
+      tenant: visitor
+      rate_limit_per_minute: 10
+      rate_limit_per_hour: 50
+      agent_allowed: true
+      allowed_tools:
+        - resume_kb__*
+    # 冒烟迭代用 Key（仅本文件、仅本地）：**权限与访客 Key 逐字相同**（只读知识库、
+    # 无 demo_sql），只把配额放宽到 600/小时，否则一轮 31 问就吃掉访客配额 62%，
+    # 一小时内无法复跑（改人设后重跑 H 组是本阶段的常规动作）。
+    # 冒烟脚本默认仍用访客 Key 验证公网真实路径，迭代时才 --api-key 切到这里。
+    - key: smoke-key-local-only
+      name: smoke
+      tenant: smoke
+      rate_limit_per_minute: 60
+      rate_limit_per_hour: 600
+      agent_allowed: true  # 与访客 Key 同权限口径（只读知识库 + 可触发 Agent）
+      allowed_tools:
+        - resume_kb__*
+
+# routing 节**故意不在此声明**，与 config/gateway.vercel.yaml 一致（都用默认值：
+# enabled=true / top_k=10 / min_tools=10）。
+# 为什么不能照抄 config/gateway.yaml 的 `routing.min_tools: 3`：那是为了让演示工作台
+# 的 `?query=` 过滤可见而调小的值。ToolRouter 的判据是 `工具总数 <= min_tools 则不过滤`，
+# 而访客 Key 只能看到 4 个知识库工具——min_tools=3 会让 4 > 3 成立、过滤生效，
+# 实测「语义路由具体是怎么实现的？」只注入 1 个工具（search_knowledge），
+# 模型因此**永远拿不到 get_card / get_profile**，只能凭一眼摘要作答（幻觉风险陡增）。
+# 默认 min_tools=10 让 4 个知识工具全部注入，与 M6 生产路径的行为一致。
+
+# ---------------------------------------------------------------------------
+# 唯一与 config/gateway.yaml 不同的地方：真实模型
+# DeepSeek 提供 OpenAI 兼容端点，base_url/model 纯配置（执行计划 §2 决策 5）。
+# temperature 由 app/agent/models.py 固定为 0，保证同一问题答案稳定可回归。
+#
+# 模型名 `deepseek-flash`（2026-09-18 迁移）：官方文档当前列出的现役名字，
+# 旧名 `deepseek-chat` 已不在文档的模型清单里（M5 §7.8 待查项闭环）。
+# 与 config/gateway.vercel.yaml **必须一致**（有契约测试钉住）。
+# 迁移属"必须重跑冒烟"的变更：本机无 Key 未重跑，残余风险见 docs/M6-上线报告.md §5。
+# 核对方式（零成本，只列模型清单）：uv run python scripts/m6_model_check.py
+# ---------------------------------------------------------------------------
+agent:
+  enabled: true
+  mock: false
+  model: deepseek-flash
+  base_url: https://api.deepseek.com/v1
+  max_rounds: 8
+  routing_top_k: 10
+
+# servers 与本地配置一致：demo_sql 走 stdio（本机有 python），resume_kb 走 inprocess
+servers:
+  - name: demo_sql
+    transport: stdio
+    command: python
+    args: ["servers/demo_sql_server/server.py"]
+  - name: resume_kb
+    transport: inprocess
+    module: servers.resume_kb_server.server:server
+
+# M3 应用层配置（人设 / 红线拒答 / 输出守门）在 config/resume_kb.yaml，平台无关，此处不留副本。

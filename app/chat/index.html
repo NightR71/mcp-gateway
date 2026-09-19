@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>陈晓伟 · AI 能力答疑</title>
+  <meta name="description" content="关于陈晓伟（AI 应用开发 / Python 后端）的项目与技术答疑：回答由知识库检索经自研 MCP 网关生成。" />
+  <!-- 演示用访客 Key：只能读简历知识库、50 次/小时（公开可见，非机密）。
+       如需换成自己的 Key，可在控制台执行 localStorage.setItem('mcp_chat_key','你的Key') 后刷新。 -->
+  <meta name="visitor-key" content="visitor-key-please-change" />
+  <link rel="stylesheet" href="/chat/chat.css" />
+</head>
+<body>
+  <header id="topbar">
+    <div class="brand">
+      <span class="brand-name">陈晓伟</span>
+      <span class="brand-sub">AI 应用开发 · Python 后端</span>
+    </div>
+    <nav class="topbar-actions">
+      <a class="link-btn" href="/resume">简历</a>
+      <button id="flow-toggle" class="link-btn mobile-only" type="button" aria-controls="side">流程</button>
+    </nav>
+  </header>
+
+  <!-- 维护态横幅（能力探测不可用时显示；不冒充回答） -->
+  <div id="maintenance" class="maintenance hidden" role="status">
+    <span class="maintenance-icon" aria-hidden="true">!</span>
+    <span id="maintenance-text">AI 答疑正在准备中。</span>
+  </div>
+
+  <main id="layout">
+    <!-- 主体：对话流 -->
+    <section id="chat-pane" class="pane">
+      <div id="stream" aria-live="polite">
+        <div class="intro-card">
+          <h1>我可以介绍他的项目与技术细节</h1>
+          <p>下方问题由<strong>自研 MCP 网关</strong>实时处理：鉴权 → 限流 → 语义路由检索知识卡片 → 模型生成 → 流式返回。也可以直接输入任何关于项目、技术栈、实习经历的问题。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 右栏：默认态 = 项目气泡卡 + 简历卡；对话态 = 运行流程 -->
+    <aside id="side" class="pane">
+      <div id="side-default">
+        <div class="side-block">
+          <div class="side-title">建议从这些问起</div>
+          <div id="bubbles" class="bubbles"></div>
+        </div>
+        <a class="resume-card" href="/resume">
+          <span class="resume-card-title">个人简历（脱敏版）</span>
+          <span class="resume-card-sub">教育背景 · 项目经历 · 实习经历 · 技能栈</span>
+          <span class="resume-card-cta">查看 →</span>
+        </a>
+      </div>
+
+      <div id="side-flow" class="hidden">
+        <div class="side-block">
+          <div class="side-title-row">
+            <span class="side-title">运行流程</span>
+            <span id="flow-status" class="flow-status idle">待机</span>
+          </div>
+          <div id="flow-stage">
+            <svg viewBox="0 0 380 660" width="100%" role="img" aria-label="本次问答的运行链路">
+              <defs>
+                <pattern id="flow-grid" width="22" height="22" patternUnits="userSpaceOnUse">
+                  <path d="M22 0H0V22" fill="none" stroke="rgba(148,163,184,0.07)" stroke-width="0.5" />
+                </pattern>
+                <radialGradient id="flow-bg" cx="50%" cy="22%" r="85%">
+                  <stop offset="0%" stop-color="rgba(47,129,247,0.12)" />
+                  <stop offset="100%" stop-color="rgba(13,17,23,0)" />
+                </radialGradient>
+                <marker id="flow-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+                  <path d="M0 0 L8 4 L0 8 z" fill="rgba(148,163,184,0.55)" />
+                </marker>
+              </defs>
+
+              <rect x="0" y="0" width="380" height="660" fill="url(#flow-bg)" />
+              <rect x="0" y="0" width="380" height="660" fill="url(#flow-grid)" />
+
+              <!-- 出站链路 -->
+              <path id="fp12" class="flow-link" d="M 162 60 C 162 80, 218 80, 218 100" marker-end="url(#flow-arrow)" />
+              <path id="fp23" class="flow-link" d="M 218 140 C 218 160, 162 160, 162 180" marker-end="url(#flow-arrow)" />
+              <path id="fp34" class="flow-link" d="M 162 220 C 162 240, 218 240, 218 260" marker-end="url(#flow-arrow)" />
+              <path id="fp45" class="flow-link" d="M 218 300 C 218 320, 162 320, 162 340" marker-end="url(#flow-arrow)" />
+              <path id="fp56" class="flow-link" d="M 162 380 C 162 400, 218 400, 218 420" marker-end="url(#flow-arrow)" />
+              <path id="fp67" class="flow-link" d="M 218 460 C 218 480, 162 480, 162 500" marker-end="url(#flow-arrow)" />
+              <path id="fp78" class="flow-link" d="M 162 540 C 162 560, 218 560, 218 580" marker-end="url(#flow-arrow)" />
+              <!-- 回程 -->
+              <path id="fpRet" class="flow-link ret" d="M 133 600 C 32 600, 32 280, 133 280" marker-end="url(#flow-arrow)" />
+              <path id="fpAns" class="flow-link ans" d="M 303 280 C 348 280, 348 40, 247 40" marker-end="url(#flow-arrow)" />
+
+              <!-- 节点：本链路标签（用户 → 网关 → 语义路由 → Agent → Registry → MCP Client → resume_kb → 知识卡片） -->
+              <g class="flow-node" id="n1">
+                <rect x="77" y="20" width="170" height="40" rx="10" />
+                <text class="nt" x="162" y="37" text-anchor="middle">你（面试官）</text>
+                <text class="ns" x="162" y="53" text-anchor="middle">浏览器 /chat</text>
+              </g>
+              <g class="flow-node" id="n2">
+                <rect x="133" y="100" width="170" height="40" rx="10" />
+                <text class="nt" x="218" y="117" text-anchor="middle">Gateway 网关</text>
+                <text class="ns" x="218" y="133" text-anchor="middle">鉴权 · 限流 · SSE</text>
+              </g>
+              <g class="flow-node" id="n3">
+                <rect x="77" y="180" width="170" height="40" rx="10" />
+                <text class="nt" x="162" y="197" text-anchor="middle">ToolRouter</text>
+                <text class="ns" x="162" y="213" text-anchor="middle">知识工具语义筛选</text>
+              </g>
+              <g class="flow-node" id="n4">
+                <rect x="133" y="260" width="170" height="40" rx="10" />
+                <text class="nt" x="218" y="277" text-anchor="middle">Agent · 模型</text>
+                <text class="ns" x="218" y="293" text-anchor="middle">决策 · 组织回答</text>
+              </g>
+              <g class="flow-node" id="n5">
+                <rect x="77" y="340" width="170" height="40" rx="10" />
+                <text class="nt" x="162" y="357" text-anchor="middle">Registry</text>
+                <text class="ns" x="162" y="373" text-anchor="middle">{server}__{tool}</text>
+              </g>
+              <g class="flow-node" id="n6">
+                <rect x="133" y="420" width="170" height="40" rx="10" />
+                <text class="nt" x="218" y="437" text-anchor="middle">MCP Client</text>
+                <text class="ns" x="218" y="453" text-anchor="middle">inprocess 传输</text>
+              </g>
+              <g class="flow-node" id="n7">
+                <rect x="77" y="500" width="170" height="40" rx="10" />
+                <text class="nt" x="162" y="517" text-anchor="middle">resume_kb</text>
+                <text class="ns" x="162" y="533" text-anchor="middle">只读检索工具</text>
+              </g>
+              <g class="flow-node" id="n8">
+                <rect x="133" y="580" width="170" height="40" rx="10" />
+                <text class="nt" x="218" y="597" text-anchor="middle">知识库卡片</text>
+                <text class="ns" x="218" y="613" text-anchor="middle">项目 / 问答 / 证据</text>
+              </g>
+
+              <circle id="flow-dot" class="flow-dot" r="4.5" opacity="0" />
+            </svg>
+          </div>
+          <div class="flow-caption"><span id="flow-caption-text">发送问题后，节点会随真实请求逐步点亮。</span></div>
+        </div>
+        <button id="flow-back" class="link-btn block" type="button">返回建议问题</button>
+      </div>
+    </aside>
+  </main>
+
+  <footer id="input-bar">
+    <input id="question" type="text" placeholder="问点具体的，例如：网关最难的三个坑是什么？" autocomplete="off" />
+    <button id="send-btn" type="button">发送</button>
+  </footer>
+
+  <script src="/chat/chat.js"></script>
+</body>
+</html>

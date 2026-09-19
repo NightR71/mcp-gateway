@@ -12,6 +12,8 @@ RUN uv sync --frozen --no-dev
 COPY app ./app
 COPY config ./config
 COPY servers ./servers
+# M3：resume_kb server 运行期只读加载该目录（Markdown 知识卡片）；缺它则检索结果为空
+COPY knowledge ./knowledge
 
 EXPOSE 8000
 CMD ["uv", "run", "--no-dev", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

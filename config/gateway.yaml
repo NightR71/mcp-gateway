@@ -9,15 +9,28 @@ gateway:
   # 单次工具调用的总时长上限（秒，阶段 7）：超过即中止并返回 502「工具调用超时」；
   # 与传输层 read_timeout 同时生效（read_timeout 内层先触发，总超时兜底）
   tool_call_timeout: 30.0
+  # M6 三态公开开关（决策 8）：本机是单进程部署，显式开 public（mock 离线演示要能跑），
+  # 用 process 存储 → 管理接口 /admin/mode 可就地切换（进程重启回落本值）。
+  public_mode: public
+  public_mode_store: process
 
 # API Key 鉴权配置
 # db_path：SQLite 存储路径（":memory:" 为纯内存，重启即丢）
 # api_keys：启动时种子写入（已存在则跳过）；演示 Key 明文入库仅为 MVP 方便，
 #          生产环境应改用密钥管理/环境变量下发
 # tenant：租户标识（阶段 6 最小多租户；未配置时归入 "default"）
-# allowed_tools：工具白名单（{server}__{tool} 全名）；未设置 = 全部工具可访问
+# allowed_tools：工具白名单（{server}__{tool} 全名）；未设置 = 全部工具可访问；
+#                以 * 结尾为前缀通配（如 resume_kb__*）
+# agent_allowed：能否触发网关内 Agent（M6，模型调用）；未设置 = 兼容旧行为（允许），
+#                false = 只能调 MCP 工具
+# admin：管理员 Key 的配额（M6）；**这里没有 Key 值**——管理员 Key 只从环境变量
+#        GATEWAY_ADMIN_KEY 读取（本机要自测 /admin/mode 时先设该变量再启动）
 auth:
   db_path: data/gateway.db
+  admin:
+    tenant: admin
+    rate_limit_per_minute: 30
+    rate_limit_per_hour: 300
   api_keys:
     # 演示 Key：tenant=demo，未设 allowed_tools（全量工具）
     - key: dev-key-please-change
@@ -33,6 +46,19 @@ auth:
       rate_limit_per_minute: 60
       allowed_tools:
         - demo_sql__ask
+    # M3：访客只读 Key（招聘方浏览器端使用）
+    # - 工具白名单仅 resume_kb__*（M3 新增的前缀通配），看不到也调不了 demo_sql__*
+    # - 额度：50 次/小时（小时桶）+ 10 次/分钟（防单点突发）——公网成本护栏
+    # - Key 值用于公开演示页、本身不是机密；凭它只能读简历知识库（只读工具集）
+    - key: visitor-key-please-change
+      name: visitor
+      tenant: visitor
+      rate_limit_per_minute: 10
+      rate_limit_per_hour: 50
+      # M6：显式放行 Agent（本机 mock 演示与真模型冒烟都要走它）
+      agent_allowed: true
+      allowed_tools:
+        - resume_kb__*
 
 # 语义工具路由配置（阶段 1：GET /tools?query= 按关键词过滤 + top-k 注入）
 # enabled：是否启用 query 过滤（false 时 /tools?query= 与无参行为一致）
@@ -59,6 +85,14 @@ agent:
   max_rounds: 8
   routing_top_k: 10
 
+# /metrics 暴露策略（M1 §5.3：默认关闭公网暴露）
+# enabled：是否暴露指标端点（false 时 /metrics 返回 404，与不存在路由不可区分）
+# require_auth：enabled=true 时是否要求有效 API Key（401/429 语义同其他接口）
+# 示例（本机/内网调试时可改为 enabled: true / require_auth: false）：
+# metrics:
+#   enabled: false
+#   require_auth: true
+
 # MCP Server 声明列表（YAML 声明、无需改代码）
 # 示例：
 #   - name: remote_api
@@ -73,3 +107,13 @@ servers:
     transport: stdio
     command: python
     args: ["servers/demo_sql_server/server.py"]
+  # M3：简历知识库（只读工具集，供访客 Key 与简历 Agent 使用）
+  # inprocess：进程内加载，与 demo_sql 在 Vercel 上的接入方式一致（Serverless 友好）；
+  # 本地/Docker 亦可原样使用（无子进程、无端口占用）。
+  - name: resume_kb
+    transport: inprocess
+    module: servers.resume_kb_server.server:server
+
+# M3 应用层配置（人设 / 红线拒答 / 输出守门）已独立到 config/resume_kb.yaml：
+# 那部分是业务应用层配置、与部署平台无关，故不在各平台配置里留副本（避免漂移）。
+# 本文件只管平台差异：server 传输方式、Key 与配额。

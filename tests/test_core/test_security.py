@@ -91,6 +91,32 @@ async def test_seed_tenant_and_allowed_tools_roundtrip(tmp_path: Path) -> None:
         await store.close()
 
 
+async def test_rate_limit_per_hour_roundtrip(tmp_path: Path) -> None:
+    """M1 小时配额：种子写入/读回 round-trip；未配置为 None（不启用）。"""
+    store = SQLiteAPIKeyStore(str(tmp_path / "keys.db"))
+    await store.init(
+        [
+            APIKeyInfo(
+                key="h1",
+                name="visitor",
+                rate_limit_per_minute=60,
+                rate_limit_per_hour=50,
+            ),
+            APIKeyInfo(key="h2", name="no-hourly"),
+        ]
+    )
+    try:
+        h1 = await store.get("h1")
+        assert h1 is not None
+        assert h1.rate_limit_per_hour == 50
+
+        h2 = await store.get("h2")
+        assert h2 is not None
+        assert h2.rate_limit_per_hour is None  # 未配置 = 不启用小时桶
+    finally:
+        await store.close()
+
+
 async def test_migrates_legacy_db_missing_columns(tmp_path: Path) -> None:
     """旧库（缺 tenant/allowed_tools 列）init 自动补列：老数据读回默认值、重复 init 幂等。"""
     db_path = str(tmp_path / "legacy.db")
@@ -119,12 +145,13 @@ async def test_migrates_legacy_db_missing_columns(tmp_path: Path) -> None:
             columns = {row[1] for row in check.execute("PRAGMA table_info(api_keys)")}
         finally:
             check.close()
-        assert {"tenant", "allowed_tools"} <= columns
+        assert {"tenant", "allowed_tools", "rate_limit_per_hour"} <= columns
 
         row = await store.get("legacy-key")
         assert row is not None
         assert row.tenant == "default"  # 迁移补列的默认租户
         assert row.allowed_tools is None  # 旧数据 = 不限制
+        assert row.rate_limit_per_hour is None  # 旧数据 = 不启用小时桶
     finally:
         await store.close()
 

@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import ProtectedDep, RegistryDep, RouterDep, router_enabled
+from app.core.errors import log_and_hide
 from app.core.logging import get_logger
 from app.mcp.schemas import (
     ToolCallRequest,
@@ -50,10 +51,12 @@ async def call_tool(
 
     阶段 6：真实存在但不在 Key 白名单内的工具返回 403；不存在的仍 404。
     阶段 7：总超时（registry 抛 ToolCallTimeoutError）返回 502 明确提示。
+    M1：调用带 Key 上下文，白名单校验在 registry.call_tool 收口（纵深防御）；
+    其余内部异常对外只返回不透明错误文案 + 关联 ID（完整异常进日志）。
     """
     try:
         registry.get_tool_for(api_key, tool_name)  # 可见性预检（404 未知 / 403 白名单外）
-        return await registry.call_tool(tool_name, body.arguments)
+        return await registry.call_tool(tool_name, body.arguments, key=api_key)
     except UnknownToolError:
         raise HTTPException(status_code=404, detail=f"未知工具: {tool_name}") from None
     except ToolNotAllowedError:
@@ -65,8 +68,8 @@ async def call_tool(
             status_code=502, detail=f"工具调用超时（>{exc.timeout:g}s）: {tool_name}"
         ) from None
     except Exception as exc:
-        logger.error("tool_call_failed", tool=tool_name, caller=api_key.name, error=str(exc))
-        raise HTTPException(status_code=502, detail=f"工具调用失败: {exc}") from exc
+        detail = log_and_hide("tool_call_failed", exc, tool=tool_name, caller=api_key.name)
+        raise HTTPException(status_code=502, detail=detail) from exc
 
 
 @router.post("/tools/{tool_name}/call/stream")
@@ -80,7 +83,9 @@ async def call_tool_stream(
 
     内部仍调用 registry.call_tool()；同步 `/tools/{tool_name}/call` 一字不改。
     未知工具在流开始前校验（保持 404 语义）；白名单外工具同样在流开始前
-    返回 403（阶段 6，防止经流式端点绕过白名单）；调用失败发 `error` 事件。
+    返回 403（阶段 6，防止经流式端点绕过白名单）。
+    M1：调用带 Key 上下文（registry 收口白名单）；失败发 `error` 事件——
+    超时保留明确提示（预期内用户可见错误），其余异常对外不透明（内部细节只进日志）。
     """
     try:
         registry.get_tool_for(api_key, tool_name)  # 流开始前校验：404 未知 / 403 白名单外
@@ -93,11 +98,16 @@ async def call_tool_stream(
     async def event_source() -> AsyncIterator[str]:
         yield f"event: start\ndata: {json.dumps({'tool': tool_name}, ensure_ascii=False)}\n\n"
         try:
-            result = await registry.call_tool(tool_name, body.arguments)
+            result = await registry.call_tool(tool_name, body.arguments, key=api_key)
             yield f"event: result\ndata: {result.model_dump_json()}\n\n"
+        except ToolCallTimeoutError as exc:
+            logger.error("tool_call_stream_timeout", tool=tool_name, timeout=exc.timeout)
+            payload = {"detail": str(exc)}
+            yield f"event: error\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
         except Exception as exc:
-            logger.error("tool_call_stream_failed", tool=tool_name, error=str(exc))
-            yield f"event: error\ndata: {json.dumps({'message': str(exc)}, ensure_ascii=False)}\n\n"
+            detail = log_and_hide("tool_call_stream_failed", exc, tool=tool_name)
+            payload = {"detail": detail}
+            yield f"event: error\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
         finally:
             yield "event: done\ndata: {}\n\n"
 

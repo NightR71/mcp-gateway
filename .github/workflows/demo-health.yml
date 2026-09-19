@@ -1,8 +1,20 @@
-# 公网 Demo 健康检查（手动触发）：从 GitHub Runner（海外网络）验收 Vercel 部署
-# 触发：Actions → demo-health → Run workflow；或用 API dispatch
+# 公网 Demo 健康检查：定时拨测（每 6 小时）+ 手动触发，从 GitHub Runner（海外网络）验收 Vercel 部署
+#
+# 为什么在 GitHub 上跑而不是本机：*.vercel.app 在中国大陆可能被 DNS 污染直连不上
+# （README「设计决策与踩坑」第 4 条），海外 Runner 天然规避。
+#
+# 成本红线：常态断言**全部免 Key 或只用公开的 visitor Key**，不打真模型；
+#   真模型连通性每天最多 1 次（用 visitor Key 发一问，消耗访客配额 1/50 小时额度）。
+#   （M6 §1 拨测约束：不得使用真实模型 Key、不得高频打真模型）
+#
+# 触发：Actions → demo-health → Run workflow；或定时 0 */6 * * *
+# 已知平台事实：公开仓库连续 60 天无提交会自动停掉 scheduled workflow；
+# 失败时本 workflow 会自动开一个 issue（GitHub 会邮件通知仓库主）。
 name: demo-health
 
 on:
+  schedule:
+    - cron: "0 */6 * * *" # 每 6 小时（UTC 整点）
   workflow_dispatch:
     inputs:
       base_url:
@@ -10,9 +22,19 @@ on:
         required: true
         default: "https://mcpgatewaydemo1.vercel.app"
       api_key:
-        description: "演示 API Key"
+        description: "公开访客 Key（只读知识库，非机密）"
         required: true
-        default: "dev-key-please-change"
+        default: "visitor-key-please-change"
+      probe_model:
+        description: "是否打一次真实模型（消耗 1 次访客额度）"
+        required: true
+        type: choice
+        default: "auto"
+        options: ["auto", "yes", "no"]
+
+permissions:
+  contents: read
+  issues: write # 失败时开 issue 告警
 
 jobs:
   accept:
@@ -24,52 +46,271 @@ jobs:
           echo "HTTP $code"; cat /tmp/health.json; echo
           test "$code" = "200"
         env:
-          BASE: ${{ inputs.base_url }}
+          BASE: ${{ inputs.base_url || 'https://mcpgatewaydemo1.vercel.app' }}
 
-      - name: 2. /tools 无 Key 应 401
+      - name: 2. /agent/status 必须是 real + usable + public（免 Key 探测）
+        run: |
+          curl -s "$BASE/agent/status" -o /tmp/status.json
+          cat /tmp/status.json; echo
+          python3 - <<'PY'
+          import json
+          body = json.load(open("/tmp/status.json"))
+          # 三态判别法（M6 §0.2）：disabled=模型 Key 没生效；mock=配置文件指错；
+          # public_mode 不是 public=开关关着（对外维护页）
+          assert body["agent_enabled"] is True, f"Agent 未就绪: {body}"
+          assert body["mode"] == "real", f"线上不是真模型（看 mode）: {body}"
+          assert body["public_mode"] == "public", f"三态开关不是 public: {body}"
+          assert body["usable"] is True, f"前端仍会显示维护页: {body}"
+          print("agent status OK:", body["mode"], body["public_mode"], body["model_label"])
+          PY
+        env:
+          BASE: ${{ inputs.base_url || 'https://mcpgatewaydemo1.vercel.app' }}
+
+      - name: 3. /tools 无 Key 应 401（鉴权默认开启）
         run: |
           code=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/tools")
           echo "HTTP $code"
           test "$code" = "401"
         env:
-          BASE: ${{ inputs.base_url }}
+          BASE: ${{ inputs.base_url || 'https://mcpgatewaydemo1.vercel.app' }}
 
-      - name: 3. /tools 带 Key 应列出 4 个工具
+      - name: 4. 访客 Key 只能看到 4 个知识库工具（白名单在线收口）
         run: |
-          curl -s -H "X-API-Key: $KEY" "$BASE/tools" | tee /tmp/tools.json
-          python3 -c "
+          curl -s -H "X-API-Key: $KEY" "$BASE/tools" -o /tmp/tools.json
+          cat /tmp/tools.json; echo
+          python3 - <<'PY'
           import json
-          names = {t['name'] for t in json.load(open('/tmp/tools.json'))}
-          expected = {'demo_sql__echo','demo_sql__ask','demo_sql__run_sql','demo_sql__list_tables'}
-          assert names == expected, f'工具列表不符: {names}'
-          print('tools OK:', sorted(names))
-          "
+          names = {t["name"] for t in json.load(open("/tmp/tools.json"))}
+          expected = {
+              "resume_kb__search_knowledge", "resume_kb__get_card",
+              "resume_kb__list_cards", "resume_kb__get_profile",
+          }
+          assert names == expected, f"访客工具集不符（应只有知识库 4 个）: {sorted(names)}"
+          print("visitor tools OK:", sorted(names))
+          PY
         env:
-          BASE: ${{ inputs.base_url }}
-          KEY: ${{ inputs.api_key }}
+          BASE: ${{ inputs.base_url || 'https://mcpgatewaydemo1.vercel.app' }}
+          KEY: ${{ inputs.api_key || 'visitor-key-please-change' }}
 
-      - name: 4. NL2SQL 闭环（ask → SQL → 结果）
+      - name: 5. 访客 Key 调白名单外工具应 403（越权被拒）
         run: |
-          curl -s -X POST "$BASE/tools/demo_sql__ask/call" \
+          code=$(curl -s -o /tmp/forbidden.json -w "%{http_code}" \
+            -X POST "$BASE/tools/demo_sql__ask/call" \
             -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
-            -d '{"arguments":{"question":"有多少客户？"}}' | tee /tmp/ask.json
-          python3 -c "
-          import json
-          body = json.load(open('/tmp/ask.json'))
-          assert body['is_error'] is False
-          text = body['content'][0]['text']
-          assert 'SELECT COUNT(*)' in text and '| 5 |' in text, text
-          print('NL2SQL OK')
-          "
+            -d '{"arguments":{"question":"有多少客户？"}}')
+          echo "HTTP $code"; cat /tmp/forbidden.json; echo
+          test "$code" = "403"
         env:
-          BASE: ${{ inputs.base_url }}
-          KEY: ${{ inputs.api_key }}
+          BASE: ${{ inputs.base_url || 'https://mcpgatewaydemo1.vercel.app' }}
+          KEY: ${{ inputs.api_key || 'visitor-key-please-change' }}
+
+      - name: 6. 能力位在线验证：只能调工具、不能触发模型（A 红线）
+        run: |
+          # 工具调用：应 200（能力位不限制 MCP 工具）
+          tools_code=$(curl -s -o /tmp/cap_tools.json -w "%{http_code}" \
+            -X POST "$BASE/tools/resume_kb__search_knowledge/call" \
+            -H "X-API-Key: $CAP_KEY" -H "Content-Type: application/json" \
+            -d '{"arguments":{"query":"网关"}}')
+          echo "工具调用 → HTTP $tools_code"; head -c 200 /tmp/cap_tools.json; echo
+          test "$tools_code" = "200"
+          # 触发模型：应 403（这就是"公开 Key 即便泄露也零模型成本"的在线证据）
+          for path in /agent/run /agent/run/stream; do
+            code=$(curl -s -o /tmp/cap_agent.json -w "%{http_code}" -X POST "$BASE$path" \
+              -H "X-API-Key: $CAP_KEY" -H "Content-Type: application/json" \
+              -d '{"question":"介绍一下你自己"}')
+            echo "$path → HTTP $code"; cat /tmp/cap_agent.json; echo
+            test "$code" = "403"
+          done
+        env:
+          BASE: ${{ inputs.base_url || 'https://mcpgatewaydemo1.vercel.app' }}
+          CAP_KEY: tools-only-key-please-change
+
+      - name: 7. 三个公开页面可访问（/chat /resume /ui）
+        run: |
+          for path in /chat /resume /ui; do
+            code=$(curl -s -o /tmp/page.html -w "%{http_code}" "$BASE$path")
+            echo "$path → HTTP $code"; test "$code" = "200"
+          done
+        env:
+          BASE: ${{ inputs.base_url || 'https://mcpgatewaydemo1.vercel.app' }}
+
+      - name: 8. 公开面零 Key 外泄（含已退役的演示 Key 不得回归）
+        run: |
+          mkdir -p /tmp/scan
+          curl -s "$BASE/" -o /tmp/scan/root.html || true
+          curl -s "$BASE/ui" -o /tmp/scan/ui.html
+          curl -s "$BASE/chat" -o /tmp/scan/chat.html
+          curl -s "$BASE/resume" -o /tmp/scan/resume.html
+          curl -s "$BASE/agent/status" -o /tmp/scan/status.json
+          curl -s "$BASE/openapi.json" -o /tmp/scan/openapi.json || true
+          curl -s -H "X-API-Key: $KEY" "$BASE/servers" -o /tmp/scan/servers.json
+          # 说明：`deepseek-chat` 作为**模型展示名**出现在 /agent/status 的 model_label 里
+          # 属预期口径（M5 §7.6），故扫描目标是**端点**与**密钥形态**，不是模型名本身。
+          python3 - <<'PY'
+          import pathlib
+          banned = [
+              "api.deepseek.com", "sk-", "Bearer ", "GATEWAY_AGENT_API_KEY",
+              "GATEWAY_ADMIN_KEY", "gsk_", "dev-key-please-change",
+              "Authorization:",
+          ]
+          hits = []
+          for path in sorted(pathlib.Path("/tmp/scan").glob("*")):
+              text = path.read_text(encoding="utf-8", errors="ignore")
+              for token in banned:
+                  if token in text:
+                      hits.append(f"{path.name} 含 {token!r}")
+          assert not hits, "公开面出现疑似凭据/端点外泄：\n" + "\n".join(hits)
+          print("leak scan OK（已退役的演示 Key 未回归）")
+          PY
+        env:
+          BASE: ${{ inputs.base_url || 'https://mcpgatewaydemo1.vercel.app' }}
+          KEY: ${{ inputs.api_key || 'visitor-key-please-change' }}
+
+      - name: 9. 真模型连通性（每天最多 1 次；真人访客路径）
+        id: probe
+        run: |
+          # auto：手动触发时跑，定时触发只在 UTC 01:00 那一轮跑（= 北京时间 09:00）
+          MODE="${{ inputs.probe_model || 'auto' }}"
+          if [ "$MODE" = "yes" ]; then RUN=1;
+          elif [ "$MODE" = "no" ]; then RUN=0;
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then RUN=1;
+          elif [ "$(date -u +%H)" = "01" ]; then RUN=1;
+          else RUN=0; fi
+          echo "probe_model=$RUN"
+          echo "run=$RUN" >> "$GITHUB_OUTPUT"
+          if [ "$RUN" = "0" ]; then echo "跳过（本时段不打真模型，成本红线）"; exit 0; fi
+          curl -sN --max-time 90 -X POST "$BASE/agent/run/stream" \
+            -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
+            -d '{"question":"这个网关最难的三个坑是什么？"}' > /tmp/stream.txt
+          tail -3 /tmp/stream.txt
+          python3 - <<'PY'
+          import json, re
+          frames = open("/tmp/stream.txt", encoding="utf-8", errors="ignore").read().split("\n\n")
+          tokens, errors, done = [], [], None
+          for frame in frames:
+              event = None; data = []
+              for line in frame.splitlines():
+                  if line.startswith("event: "): event = line[7:].strip()
+                  elif line.startswith("data: "): data.append(line[6:])
+              if not event or not data: continue
+              payload = json.loads("\n".join(data))
+              if event == "token": tokens.append(payload.get("text", ""))
+              elif event == "error": errors.append(payload)
+              elif event == "done": done = payload
+          assert not errors, f"流式返回 error 事件: {errors}"
+          answer = "".join(tokens)
+          assert answer.strip(), "没有收到任何 token（真模型路径可能断了）"
+          assert done is not None, "缺少 done 事件"
+          # 输出守门在线复验：回答里不得出现手机号/邮箱
+          assert not re.search(r"(?<!\d)1[3-9]\d{9}(?!\d)", answer), "回答出现手机号"
+          assert not re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+\.[A-Za-z]{2,}", answer), "回答出现邮箱"
+          print(f"real-model probe OK：{len(answer)} 字，轮次 {done['response'].get('rounds')}")
+          PY
+        env:
+          BASE: ${{ inputs.base_url || 'https://mcpgatewaydemo1.vercel.app' }}
+          KEY: ${{ inputs.api_key || 'visitor-key-please-change' }}
+
+      - name: 10. 线上 5 问复验（仅 probe_model=yes 时跑；覆盖 5 张项目卡）
+        if: ${{ (inputs.probe_model || 'auto') == 'yes' }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, urllib.request
+
+          BASE = os.environ["BASE"]; KEY = os.environ["KEY"]
+          QUESTIONS = [
+              ("mcp-gateway", "为什么做这个网关？它解决什么问题"),
+              ("graduation-desktop-agent", "介绍一下你的毕业设计"),
+              ("harmonyos-smart-home", "介绍一下鸿蒙智能家居这个项目"),
+              ("internship-medical-saas", "实习主要做了什么"),
+              ("ocean-nl2sql", "介绍一下海洋数据那段实习"),
+          ]
+          PHONE = re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
+          EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+\.[A-Za-z]{2,}")
+          EMPLOYERS = ("中电福富", "海科新质")
+
+          def ask(question):
+              req = urllib.request.Request(
+                  f"{BASE}/agent/run/stream",
+                  data=json.dumps({"question": question}).encode(),
+                  headers={"X-API-Key": KEY, "Content-Type": "application/json"},
+              )
+              tokens, kinds, errors = [], [], []
+              with urllib.request.urlopen(req, timeout=120) as resp:
+                  raw = resp.read().decode("utf-8", "ignore")
+              for frame in raw.split("\n\n"):
+                  event = None; data = []
+                  for line in frame.splitlines():
+                      if line.startswith("event: "): event = line[7:].strip()
+                      elif line.startswith("data: "): data.append(line[6:])
+                  if not event or not data: continue
+                  payload = json.loads("\n".join(data))
+                  if event == "token": tokens.append(payload.get("text", ""))
+                  elif event == "error": errors.append(payload)
+                  elif event == "step": kinds.append(payload["step"]["kind"])
+              return "".join(tokens), kinds, errors
+
+          failures = []
+          for card, question in QUESTIONS:
+              answer, kinds, errors = ask(question)
+              problems = []
+              if errors: problems.append(f"error 事件 {errors}")
+              if "tool_call" not in kinds and "tool_result" not in kinds:
+                  problems.append("没先检索（steps 里没有工具调用）")
+              if len(answer.strip()) < 40: problems.append(f"答案过短（{len(answer)} 字）")
+              if PHONE.search(answer): problems.append("答案含手机号")
+              if EMAIL.search(answer): problems.append("答案含邮箱")
+              hit = [name for name in EMPLOYERS if name in answer]
+              if hit: problems.append(f"答案含雇主实名 {hit}")
+              if "I'll" in answer: problems.append("答案含英文过程旁白（人设禁令）")
+              status = "✅" if not problems else "❌"
+              print(f"{status} [{card}] {question} → {len(answer)} 字，steps={len(kinds)}，"
+                    f"前三步={kinds[:3]}")
+              print(f"    回答节选：{answer[:180]}".replace("\n", " "))
+              if problems:
+                  failures.append(f"[{card}] " + "；".join(problems))
+          assert not failures, "线上复验未通过：\n" + "\n".join(failures)
+          print(f"\n线上 5 问复验全部通过（{len(QUESTIONS)} 问）")
+          PY
+        env:
+          BASE: ${{ inputs.base_url || 'https://mcpgatewaydemo1.vercel.app' }}
+          KEY: ${{ inputs.api_key || 'visitor-key-please-change' }}
 
       # 诊断：无论成败都打印 /servers（registry 会记录每个 server 的连接错误详情）
       - name: 诊断 /servers
         if: always()
         run: |
-          curl -s -H "X-API-Key: $KEY" "$BASE/servers"
+          curl -s -H "X-API-Key: $KEY" "$BASE/servers" || true
         env:
-          BASE: ${{ inputs.base_url }}
-          KEY: ${{ inputs.api_key }}
+          BASE: ${{ inputs.base_url || 'https://mcpgatewaydemo1.vercel.app' }}
+          KEY: ${{ inputs.api_key || 'visitor-key-please-change' }}
+
+      - name: 失败告警（自动开 issue，GitHub 邮件通知）
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const title = `[demo-health] 线上拨测失败 ${new Date().toISOString().slice(0, 16)}Z`;
+            const body = [
+              `拨测 job 失败，请查看运行日志：${runUrl}`,
+              "",
+              "常见原因与处置（见 docs/M6-部署操作手册.md §6 故障速查）：",
+              "- `mode: disabled` → Vercel 的 `GATEWAY_AGENT_API_KEY` 没生效（改完要触发新部署）",
+              "- `mode: mock` → `GATEWAY_CONFIG_FILE` 指错了配置文件",
+              "- `public_mode` 不是 public → 三态开关处于 internal/closed",
+              "- HTTP 429 → 访客额度用尽（10/分钟、50/小时），等额度恢复",
+            ].join("\n");
+            const { data } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo, state: "open", per_page: 20,
+            });
+            const existing = data.find(i => i.title.startsWith("[demo-health]"));
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: existing.number, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo, title, body,
+              });
+            }

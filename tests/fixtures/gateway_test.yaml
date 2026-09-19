@@ -2,12 +2,24 @@
 # - SQLite 用 ":memory:"，不产生文件、测试间天然隔离
 # - demo_sql 用 inprocess 传输（进程内加载，沙箱/CI 稳定，文档 §14 推荐；
 #   stdio 真实子进程路径由 tests/test_mcp/test_registry.py 覆盖）
-# - 两个测试 Key：test-key 正常配额；limited-key 极低配额（专测 429）
+# - 测试 Key：test-key 正常配额；limited-key 极低配额（专测 429）；
+#   whitelist-key 只允许 demo_sql__ask（专测白名单）；
+#   hourly-key 每小时 2 次（专测 M1 小时桶）；
+#   tools-only-key 禁止触发 Agent（M6 能力位，专测 /agent/run 403）
 # - routing.min_tools: 2 —— 4 个工具 > 2，query 过滤生效（专测阶段 1 语义路由）
 # - agent: mock 模式启用（专测阶段 2 /agent/run；mock 不需要 LLM Key）
+# - public_mode: public —— M6 三态开关的默认值是 closed（fail-closed），夹具必须显式开，
+#   否则全部 Agent 用例会变成 503 维护页（这本身说明"开关确实接上了"）；
+#   三态行为在 tests/test_api/test_admin_mode.py 里按态逐个测
+# - auth.admin 的分钟配额故意压到 3：专测 /admin/mode 的 429 分支
+# - max_request_body_bytes: 20000（专测 M1 请求体上限 413；需容纳 422 用例的
+#   超长 question——httpx json= 对非 ASCII 做 \uXXXX 转义，中文每字约 6 字节）
+# - metrics: 开启并要求鉴权（专测 M1 /metrics 策略）
 gateway:
   app_name: mcp-gateway-test
   log_level: WARNING
+  max_request_body_bytes: 20000
+  public_mode: public
 
 routing:
   enabled: true
@@ -20,8 +32,16 @@ agent:
   max_rounds: 8
   routing_top_k: 10
 
+metrics:
+  enabled: true
+  require_auth: true
+
 auth:
   db_path: ":memory:"
+  admin:
+    tenant: admin
+    rate_limit_per_minute: 3  # 故意极小：专测 /admin/mode 的 429（管理员配额也受令牌桶约束）
+    rate_limit_per_hour: 100
   api_keys:
     - key: test-key
       name: tester
@@ -36,6 +56,17 @@ auth:
       rate_limit_per_minute: 60
       allowed_tools:
         - demo_sql__ask
+    # M1：小时桶 Key —— 每小时 2 次（分钟额度充足，专测小时限流）
+    - key: hourly-key
+      name: hourly
+      rate_limit_per_minute: 100
+      rate_limit_per_hour: 2
+    # M6：能力位 Key —— 工具可见（无白名单），但禁止触发 Agent（专测 403；
+    # 同时验证"同一个 Key 调 /tools 仍正常"）
+    - key: tools-only-key
+      name: tools-only
+      rate_limit_per_minute: 60
+      agent_allowed: false
 
 servers:
   - name: demo_sql

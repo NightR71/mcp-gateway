@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>陈晓伟 · 简历（脱敏版）</title>
+  <meta name="description" content="陈晓伟的简历（脱敏版）：AI 应用开发 / Python 后端方向，2026 届。" />
+  <link rel="stylesheet" href="/resume/resume.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="back" href="/chat">← 返回 AI 答疑</a>
+    <span class="tag">脱敏版简历</span>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h1>陈晓伟</h1>
+      <p class="role">AI 应用开发工程师 · Python 后端</p>
+      <p class="meta">
+        2026 届本科 · 智能科学与技术 · 福州理工学院 · 已离校，可随时到岗
+      </p>
+      <p class="honor">第二十七届中国机器人及人工智能大赛 福建赛区三等奖（2025.06）</p>
+      <p class="note">
+        本页为脱敏版本：不包含电话、邮箱等联系方式，雇主以行业描述呈现。
+        需要联系方式或完整原件，请通过招聘平台与本人联系。
+      </p>
+    </section>
+
+    <section>
+      <h2>一句话介绍</h2>
+      <p>
+        主攻 AI 应用开发与 Python 后端，方向是 <strong>MCP 生态与大模型应用工程</strong>，
+        经历覆盖三层：从工具层（接入开源 MCP、自研 Agent 闭环编排）、到平台层
+        （本地模型推理编排、自然语言查数），再到基础设施层（独立开源 MCP 智能体网关，
+        统一接入多个 MCP Server）。工程习惯是做东西默认带测试、文档与部署验证。
+      </p>
+    </section>
+
+    <section>
+      <h2>技能栈</h2>
+      <ul class="skills">
+        <li><span class="k">语言与框架</span>Python（FastAPI / asyncio / Flask）、Java（Spring Cloud / Feign / Nacos）</li>
+        <li><span class="k">AI / Agent</span>MCP 协议与智能体网关、工具语义路由、Agent 循环、Dify 工作流、RAG</li>
+        <li><span class="k">模型</span>LoRA 微调（Unsloth）、GGUF 量化、Ollama 本地部署、NL2SQL</li>
+        <li><span class="k">数据与工程</span>MySQL / PostgreSQL / 达梦、RESTful API 设计、Docker、Git、GitHub Actions CI</li>
+        <li><span class="k">AI 编程实践</span>范式约束（约定文档 / 兼容红线）+ 测试闭环 + 不稳定区固化回归测试</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>核心项目</h2>
+
+      <article class="project featured">
+        <h3>MCP Gateway · 智能体工具网关 <span class="badge">开源 · 独立完成</span></h3>
+        <p class="when">2026.08 开源上线</p>
+        <p class="pain"><strong>解决什么问题</strong>：工具越来越多时全量塞进模型上下文会导致 token 膨胀与选不准；多个调用方共享工具缺乏隔离与配额；下游 MCP Server 宕机会拖垮整个入口。</p>
+        <ul>
+          <li><strong>四传输统一接入</strong>：stdio / SSE / Streamable HTTP / inprocess（进程内加载，适配 Serverless）；新 Server 只在 YAML 声明接入，无需改代码。</li>
+          <li><strong>语义工具路由</strong>：中文 2-gram 分词 + 名称/描述/参数加权打分，按查询只注入 top-k，控制上下文预算；打分器为协议接口，可平滑升级为 embedding。</li>
+          <li><strong>网关内 Agent 循环</strong>：工具路由 → 模型决策 → 网关执行 → 结果回填 → 最终回答；模型可插拔（OpenAI 兼容端点 / 离线模型）。</li>
+          <li><strong>SSE 流式</strong>：步骤事件 + 回答逐字流式，事件契约与前端流程图节点一一对应。</li>
+          <li><strong>安全与多租户</strong>：API Key 鉴权、令牌桶限流（分钟桶 + 小时桶）、租户工具白名单（支持前缀通配）、白名单收口到调用点、入参设界、内部错误不透明化。</li>
+          <li><strong>可靠性</strong>：下游断线指数退避自动重连（2s→60s）、调用总超时、按 MCP SDK 错误码分类识别断连与超时。</li>
+        </ul>
+        <p class="result">
+          <strong>结果</strong>：190+ 项自动化测试（含真实子进程集成测试、停服自愈故障注入测试）+
+          GitHub Actions CI + Docker 与 Serverless 两套部署形态，均已上线可体验。MIT 开源。
+        </p>
+      </article>
+
+      <article class="project">
+        <h3>桌面悬浮窗任务 Agent（毕业设计）</h3>
+        <p class="when">2025.08 起持续迭代（2026.03 完成架构重构）</p>
+        <p class="pain"><strong>解决什么问题</strong>：让语音/文本指令真正驱动桌面与浏览器操作，而不是停在聊天层。</p>
+        <ul>
+          <li><strong>Agent 闭环</strong>：主循环为「模型 → 工具 → 结果回灌 → 再推理」的递归闭环，带深度上限、失败重试与停止信号检查。</li>
+          <li><strong>声明式接入开源 MCP</strong>：集成开源 Windows-MCP 与 OmniMCP（stdio 声明式配置），自研 Agent 框架统一调度其桌面/浏览器工具，完成跨应用多步流程编排。</li>
+          <li><strong>传输层抽象与工具管理</strong>：三种传输统一分派，跨服务器工具路由，自研 MCP Server 提供上下文工具。</li>
+          <li><strong>交互与语音</strong>：PyQt5 自绘置顶悬浮球 + 全局热键；语音识别接入，前后端以子线程事件循环 + 信号回传桥接。</li>
+        </ul>
+        <p class="result">
+          <strong>结果</strong>：可演示「语音 → 识别 → Agent 编排 → 桌面元素定位与操作」完整闭环；
+          代码规模 21 个源码文件 / 约 2,617 行。
+        </p>
+        <p class="scope">
+          <strong>归属说明</strong>：桌面/浏览器的截图与元素识别能力来自开源 MCP Server 的内置工具，
+          本人负责 Agent 框架、悬浮窗交互、传输抽象与主循环编排；编码过程为「本人设计 + AI 辅助编码 + 逐文件人工调试」。
+        </p>
+      </article>
+
+      <article class="project">
+        <h3>鸿蒙智能家居系统 · 本地模型控制闭环</h3>
+        <p class="when">2024.07 – 2025.07（3 人协作：2 人动手开发 + 1 人辅助文档）</p>
+        <p class="pain"><strong>解决什么问题</strong>：传统智能家居依赖云端、无法用自然语言自主管理，需要本地化、能听懂自然语言并实时监控的控制闭环。</p>
+        <ul>
+          <li><strong>两段式推理 Agent</strong>：模型先取实时传感数据拼上下文，再输出控制指令；自定义对话协议同时写入训练模板与推理模板，指令解析失败时兜底不打断对话。</li>
+          <li><strong>模型微调与本地部署</strong>：Unsloth + LoRA 微调 DeepSeek-R1 蒸馏 8B（自建 450+ 条四轮对话数据集，两轮训练分别 250 / 400 条）→ GGUF 量化 → Ollama 本地部署。</li>
+          <li><strong>后端与数据库</strong>：FastAPI + MySQL，6 张核心表 + 触发器，逻辑删除与级联，类型表自关联树形分类；60 秒采集循环 + WebSocket 实时监控。</li>
+          <li><strong>前端</strong>：搭建鸿蒙 ArkTS 主体框架与示例页面，协作同学在其基础上继续开发。</li>
+        </ul>
+        <p class="result">
+          <strong>结果</strong>：第二十七届中国机器人及人工智能大赛福建赛区三等奖；
+          形成「设备管理 — AI 交互 — 硬件控制」完整闭环（后端 21 个 RESTful 接口 + WebSocket 实时推送）。
+        </p>
+      </article>
+    </section>
+
+    <section>
+      <h2>实习经历</h2>
+
+      <article class="project">
+        <h3>某央企背景软件服务商 · 基层医疗卫生信息化（SaaS）</h3>
+        <p class="when">2025.09 – 2025.11（行业描述口径）</p>
+        <p class="role-line">AI 方向实习生，主要承担 Java 业务模块开发（Spring Cloud 微服务团队）</p>
+        <ul>
+          <li><strong>随访数据批量导入链路</strong>：面向四类慢病随访结果的 Excel 批量导入——声明式表头映射与字典码值翻译、
+            逐字段校验（白名单 / 正则 / 否定语义）、全量通过才事务落库、错误明细回执供下载。</li>
+          <li><strong>跨服务字段回填</strong>：为历史档案补充字段，跨服务回查与数据链路打通。</li>
+          <li><strong>一致性修复</strong>：网格-团队关系幂等修复、列表 N+1 查询优化（批量查询 + 内存回填）、
+            体检子表幂等重建、地址层级拆分（小区 / 楼栋 / 门牌号，两级正则 + 兜底）。</li>
+        </ul>
+        <p class="result">
+          <strong>结果</strong>：核心导入链路上线支撑随访批量回填；累计 19 次提交、+3,260 行、涉及 47 个文件，
+          其中 15 次提交已并入团队主干。
+        </p>
+      </article>
+
+      <article class="project">
+        <h3>某海洋数据科技企业 · 海洋数据管理领域</h3>
+        <p class="when">2025.11 – 2025.12（短期专项交付，行业描述口径）</p>
+        <p class="role-line">独立设计并交付「自然语言 → 数据问答」专项</p>
+        <ul>
+          <li><strong>流程设计</strong>：Dify 工作流编排 + Python 自研 MCP Server 对接达梦数据库。</li>
+          <li><strong>可用性兜底</strong>：本地模型的 NL2SQL 采用固定查询兜底 + 默认分页，保障小模型场景下流程可用。</li>
+          <li><strong>对话护栏</strong>：违规词检测与 SQL 注入拦截的 Demo。</li>
+        </ul>
+        <p class="result"><strong>结果</strong>：Demo 达到交付目标；本地小模型能力有限，以固定查询兜底保障流程可用。</p>
+      </article>
+    </section>
+
+    <section>
+      <h2>教育背景</h2>
+      <p>福州理工学院 · 智能科学与技术 · 本科 · 2022.09 – 2026.06</p>
+      <p class="muted">荣誉：第二十七届中国机器人及人工智能大赛 福建赛区三等奖（2025.06）</p>
+    </section>
+
+    <section class="cta">
+      <p>想了解某个项目的实现细节？可以回到 AI 答疑页直接提问，回答由本仓库的 MCP 网关实时检索项目知识库生成。</p>
+      <a class="btn" href="/chat">去 AI 答疑 →</a>
+    </section>
+
+    <footer class="foot">
+      <p>
+        联系方式未在本页展示（脱敏）。需要完整简历原件或联系方式，请通过招聘平台与本人联系。
+      </p>
+      <p class="muted">本页与 AI 答疑页同源部署，均基于本仓库自研 MCP 网关。</p>
+    </footer>
+  </main>
+</body>
+</html>

@@ -61,6 +61,10 @@ class UnknownToolError(KeyError):
 class ToolNotAllowedError(Exception):
     """工具真实存在但不在当前 API Key 的白名单内（API 层映射为 403）。"""
 
+    def __init__(self, tool_name: str) -> None:
+        self.tool_name = tool_name
+        super().__init__(f"工具不在白名单内: {tool_name}")
+
 
 class ToolCallTimeoutError(Exception):
     """工具调用超过总时长上限（阶段 7；API 层映射为 502 明确提示）。"""

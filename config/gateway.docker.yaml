@@ -4,16 +4,38 @@
 gateway:
   app_name: mcp-gateway
   log_level: INFO
+  # M6 三态公开开关（决策 8）：容器内是单进程网关，用 process 存储 →
+  # 管理员可经 /admin/mode 即时切换（容器重启回落本值）。
+  public_mode: public
+  public_mode_store: process
 
 auth:
   db_path: data/gateway.db
+  # 管理员 Key 的配额（**无 Key 值**）：凭据唯一来源是环境变量 GATEWAY_ADMIN_KEY
+  admin:
+    tenant: admin
+    rate_limit_per_minute: 30
+    rate_limit_per_hour: 300
   api_keys:
     - key: dev-key-please-change
       name: demo
       rate_limit_per_minute: 60
+    # M3：访客只读 Key（工具白名单仅 resume_kb__*；50 次/小时）
+    - key: visitor-key-please-change
+      name: visitor
+      tenant: visitor
+      rate_limit_per_minute: 10
+      rate_limit_per_hour: 50
+      agent_allowed: true  # M6：显式放行 Agent（本配置无 agent 节 = Agent 未启用，仅表态）
+      allowed_tools:
+        - resume_kb__*
 
 servers:
   - name: demo_sql
     transport: http
     # mcp SDK streamable-http 服务默认挂载 /mcp；demo_sql 为 compose 服务名
     url: http://demo_sql:9001/mcp
+  # M3：简历知识库走 inprocess（只读、无状态、无端口；容器内无需额外进程）
+  - name: resume_kb
+    transport: inprocess
+    module: servers.resume_kb_server.server:server

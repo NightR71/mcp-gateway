@@ -97,3 +97,28 @@ async def test_list_tools_for_key_whitelist(registry: ToolRegistry) -> None:
     # server_status 按 Key 统计可见工具数；无 Key 时保持全量统计
     assert registry.server_status(limited)[0].tool_count == 1
     assert registry.server_status()[0].tool_count == 4
+
+
+async def test_call_tool_enforces_whitelist(registry: ToolRegistry) -> None:
+    """M1 §5.3：白名单校验收口进 call_tool——传 Key 时白名单外工具在调用点被拒。"""
+    limited = APIKeyInfo(key="limited", name="limited", allowed_tools=["demo_sql__ask"])
+
+    # 白名单外的真实工具：即使直接调 call_tool 也被拒（任何入口都无法绕过）
+    with pytest.raises(ToolNotAllowedError) as exc_info:
+        await registry.call_tool("demo_sql__run_sql", {"sql": "SELECT 1"}, key=limited)
+    assert "白名单" in str(exc_info.value)
+
+    # 白名单内的工具正常调用
+    result = await registry.call_tool("demo_sql__ask", {"question": "有多少客户？"}, key=limited)
+    assert result.is_error is False
+
+    # 全量 Key（allowed_tools=None）不受限
+    full_key = APIKeyInfo(key="full", name="full")
+    result = await registry.call_tool("demo_sql__run_sql", {"sql": "SELECT 1"}, key=full_key)
+    assert result.is_error is False
+
+
+async def test_call_tool_without_key_still_works(registry: ToolRegistry) -> None:
+    """M1 兼容：不传 Key（匿名/内部调用/旧调用方）不检查白名单，签名向后兼容。"""
+    result = await registry.call_tool("demo_sql__echo", {"message": "hello"})
+    assert result.is_error is False

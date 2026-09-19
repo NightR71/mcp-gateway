@@ -9,6 +9,7 @@ from httpx import AsyncClient
 AUTH_HEADERS = {"X-API-Key": "test-key"}
 LIMITED_HEADERS = {"X-API-Key": "limited-key"}
 WHITELIST_HEADERS = {"X-API-Key": "whitelist-key"}
+HOURLY_HEADERS = {"X-API-Key": "hourly-key"}
 
 
 async def test_list_tools_ok(gateway_client: AsyncClient) -> None:
@@ -82,6 +83,19 @@ async def test_rate_limit_exceeded(gateway_client: AsyncClient) -> None:
     assert int(resp.headers["retry-after"]) >= 1
 
     # 正常额度的 test-key 不受 limited-key 限流影响
+    assert (await gateway_client.get("/tools", headers=AUTH_HEADERS)).status_code == 200
+
+
+async def test_hourly_rate_limit_exceeded(gateway_client: AsyncClient) -> None:
+    """M1 小时桶：hourly-key 每小时 2 次（分钟额度充足）——第 3 次 429 且小时级 Retry-After。"""
+    assert (await gateway_client.get("/tools", headers=HOURLY_HEADERS)).status_code == 200
+    assert (await gateway_client.get("/tools", headers=HOURLY_HEADERS)).status_code == 200
+
+    resp = await gateway_client.get("/tools", headers=HOURLY_HEADERS)
+    assert resp.status_code == 429
+    assert int(resp.headers["retry-after"]) > 60  # 小时桶补充节奏远慢于分钟桶
+
+    # 其他 Key 不受影响
     assert (await gateway_client.get("/tools", headers=AUTH_HEADERS)).status_code == 200
 
 
@@ -223,7 +237,7 @@ async def test_call_tool_timeout_returns_502(gateway_client: AsyncClient, monkey
 
     registry = app.state.registry
 
-    async def fake_call_tool(name: str, arguments: dict) -> None:
+    async def fake_call_tool(name: str, arguments: dict, key=None) -> None:
         raise ToolCallTimeoutError(name, 30.0)
 
     monkeypatch.setattr(registry, "call_tool", fake_call_tool)
@@ -241,7 +255,7 @@ async def test_call_tool_stream_timeout_error_event(
 
     registry = app.state.registry
 
-    async def fake_call_tool(name: str, arguments: dict) -> None:
+    async def fake_call_tool(name: str, arguments: dict, key=None) -> None:
         raise ToolCallTimeoutError(name, 30.0)
 
     monkeypatch.setattr(registry, "call_tool", fake_call_tool)

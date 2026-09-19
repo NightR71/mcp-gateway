@@ -34,6 +34,27 @@ from app.schemas.auth import APIKeyInfo
 logger = get_logger(__name__)
 
 
+def is_tool_allowed(tool_name: str, allowed_tools: list[str] | None) -> bool:
+    """工具白名单判定（M1 收口的唯一实现，M3 扩展通配前缀）。
+
+    - `None`：不限制（兼容旧数据；与空列表语义不同——空列表 = 什么都不允许）；
+    - 精确条目：`{server}__{tool}` 全名完全相等；
+    - 通配条目：以 `*` 结尾视为前缀匹配（如 `resume_kb__*` 允许该 server 全部工具，
+      供访客只读 Key 使用）。`*` 不是合法工具名字符，不会与真实工具名冲突。
+
+    可见性过滤（list_tools_for）、单工具校验（get_tool_for）与执行侧校验
+    （call_tool）三处共用本函数——白名单逻辑只有一处实现，避免规则漂移。
+    """
+    if allowed_tools is None:
+        return True
+    for entry in allowed_tools:
+        if entry == tool_name:
+            return True
+        if entry.endswith("*") and tool_name.startswith(entry[:-1]):
+            return True
+    return False
+
+
 def classify_error(exc: Exception) -> str:
     """工具调用异常分类（阶段 7）：timeout / connection / tool_error。
 
@@ -229,16 +250,17 @@ class ToolRegistry:
         return list(self._tools.values())
 
     def list_tools_for(self, key: APIKeyInfo) -> list[ToolInfo]:
-        """按 API Key 的工具白名单过滤（阶段 6）。
+        """按 API Key 的工具白名单过滤（阶段 6；M3 支持 `{server}__*` 通配）。
 
         - `allowed_tools is None`（未配置/旧数据）= 不限制，返回全量；
-        - 否则只返回白名单内（{server}__{tool} 全名）的工具。
-        路由层直接消费本方法，不在路由里重复实现白名单业务逻辑。
+        - 否则只返回白名单内（精确全名或通配前缀命中）的工具。
+        判定统一走 `is_tool_allowed`，路由层不在路由里重复实现白名单业务逻辑。
         """
         if key.allowed_tools is None:
             return self.list_tools()
-        allowed = set(key.allowed_tools)
-        return [tool for tool in self._tools.values() if tool.name in allowed]
+        return [
+            tool for tool in self._tools.values() if is_tool_allowed(tool.name, key.allowed_tools)
+        ]
 
     def get_tool_for(self, key: APIKeyInfo, namespaced_name: str) -> ToolInfo:
         """按 API Key 取工具（含可见性校验）。
@@ -247,7 +269,7 @@ class ToolRegistry:
         `ToolNotAllowedError`（API 层 403）。
         """
         tool = self.get_tool(namespaced_name)
-        if key.allowed_tools is not None and tool.name not in key.allowed_tools:
+        if not is_tool_allowed(tool.name, key.allowed_tools):
             raise ToolNotAllowedError(namespaced_name)
         return tool
 
@@ -257,8 +279,19 @@ class ToolRegistry:
         except KeyError:
             raise UnknownToolError(namespaced_name) from None
 
-    async def call_tool(self, namespaced_name: str, arguments: dict[str, Any]) -> ToolCallResult:
+    async def call_tool(
+        self,
+        namespaced_name: str,
+        arguments: dict[str, Any],
+        key: APIKeyInfo | None = None,
+    ) -> ToolCallResult:
         """按命名空间工具名路由到对应 server 调用（阶段 7：总超时 + 错误分类）。
+
+        白名单收口（M1）：`key` 传入且其 allowed_tools 非空时，白名单外工具在
+        本调用点直接拒绝（ToolNotAllowedError）——校验收口在唯一执行入口，
+        任何上层入口（工具 API / Agent / 未来新增入口）都无法绕过。
+        M3：判定支持 `{server}__*` 通配前缀（访客只读 Key 只需一条 `resume_kb__*`）。
+        `key=None` 表示匿名/内部调用，不做白名单检查（兼容旧签名与单测）。
 
         错误语义（分类见 `classify_error`）：
         - 总耗时超过 `tool_call_timeout` → `ToolCallTimeoutError`（API 层 502 明确提示）；
@@ -268,6 +301,9 @@ class ToolRegistry:
         指标：ToolCallTimer 在异常抛出时自动记录 status="exception"。
         """
         tool = self.get_tool(namespaced_name)
+        if not is_tool_allowed(tool.name, key.allowed_tools if key is not None else None):
+            logger.warning("tool_not_allowed", tool=namespaced_name, caller=key.name if key else "")
+            raise ToolNotAllowedError(namespaced_name)
         client = self._clients[tool.server]
         with ToolCallTimer(namespaced_name, tool.server) as timer:
             try:

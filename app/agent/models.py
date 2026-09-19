@@ -35,18 +35,28 @@ def build_openai_model(
     api_key: str,
     model_name: str,
     client: httpx.AsyncClient | None = None,
+    *,
+    connect_retries: int = 0,
 ) -> Model:
     """构造走 OpenAI 兼容 chat/completions 的模型。
 
     base_url 可指向任意兼容端点（One-API / Ollama / DeepSeek 等），模型无关。
     client 缺省时自建 httpx.AsyncClient（随模型 aclose() 关闭）。
+
+    `connect_retries`：传输层连接重试次数（M5 实测必需，见 AgentConfig 注释）。
+    重试由 httpx 在**连接层**完成（ConnectError/ConnectTimeout），会重新建立连接，
+    因此可绕过「部分后端 IP 的 TLS 证书链校验失败」这类单连接故障；每次尝试仍然
+    完整校验证书，不降低安全性。默认 0 = 与旧行为完全一致（测试/自定义 client 不受影响）。
     """
 
     url = f"{base_url.rstrip('/')}/chat/completions"
 
     class _OpenAIModel:
         def __init__(self) -> None:
-            self._client = client or httpx.AsyncClient(timeout=120.0)
+            self._client = client or httpx.AsyncClient(
+                transport=httpx.AsyncHTTPTransport(retries=connect_retries),
+                timeout=120.0,
+            )
             self._owns_client = client is None
 
         async def chat(self, messages: list[Message], tools: list[dict[str, Any]]) -> Message:

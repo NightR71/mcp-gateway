@@ -44,3 +44,8 @@ Thumbs.db
 docs/
 .opencode/
 opencode.json
+
+# 参考源码与项目证明材料（不入库）
+# 含雇主内部代码（中电福富 Java 微服务/DTO、达梦相关）与第三方姓名、真实邮箱等，
+# 仅供本地提取事实用：仅只读、永不 add、永不 push。衍生的知识库卡片必须脱敏。
+references/
