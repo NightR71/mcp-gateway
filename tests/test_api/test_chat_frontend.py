@@ -263,6 +263,28 @@ async def test_status_leaks_no_secret_fields(gateway_client: AsyncClient) -> Non
 # ---------------------------------------------------------------------------
 
 
+def test_process_trace_is_collapsed_by_default() -> None:
+    """UX 契约（用户 2026-09-18 反馈）：内部运行步骤默认折叠，面试官只看得到问答。
+
+    背景：步骤卡（语义路由 / 鉴权限流 / 工具调用 / 耗时）此前直接铺在对话流里，
+    面试官得一路划到底才看得到回答——像在看日志，不像在对话。
+    现在每轮问答生成一个默认收起的「运行详情」块：提问与回答在块外，步骤在块内。
+
+    本地浏览器实测（Chromium）：默认态 3 步全部不可见、点标题展开后可见、
+    出现失败步骤时自动展开并标红。断言写在静态文件上，避免以后被无意改回。
+    """
+    js = (CHAT_DIR / "chat.js").read_text(encoding="utf-8")
+    css = (CHAT_DIR / "chat.css").read_text(encoding="utf-8")
+    assert 'root.dataset.state = "collapsed"' in js, "轨迹块不再默认收起"
+    assert 'root.dataset.state = expanded ? "collapsed" : "expanded"' in js, "点击不再可切换"
+    assert 'trace.root.dataset.state = "expanded"' in js, "失败步骤不再自动展开"
+    assert 'head.setAttribute("aria-expanded"' in js, "标题栏缺少无障碍展开状态"
+    assert "(trace ? trace.body : streamEl).appendChild(el)" in js, "步骤卡没有进轨迹块"
+    assert '.trace[data-state="collapsed"] .trace-body { display: none; }' in css, (
+        "收起态没有真正隐藏步骤内容"
+    )
+
+
 def _frontend_files() -> list[Path]:
     return sorted(
         [p for p in CHAT_DIR.iterdir() if p.is_file()]

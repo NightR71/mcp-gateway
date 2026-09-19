@@ -145,6 +145,68 @@ const STEP_LABEL = {
   final: "回答",
 };
 
+/* ---------------- 运行轨迹折叠块（M6 UX） ----------------
+ * 问题：内部运行步骤（语义路由 / 鉴权限流 / 工具调用 / 耗时）此前直接铺在对话流里，
+ *       面试官得一路划到底才看得到回答，像在看日志而不是在对话。
+ * 做法：每一轮问答创建一个**默认收起**的「运行详情」块，所有步骤卡都放进它里面；
+ *       提问与回答留在块外——面试官只看得到正常问答，想深挖再自己点开。
+ * 细节：标题栏是 <button>（键盘可达 + aria-expanded），步骤数实时更新；
+ *       出现失败步骤时自动展开并把标题染红（错误必须看得见）。
+ * 注意：右栏流程图保持原样——它本来就是"运行中"的过程可视化，回答完成后自动回到默认态。 */
+let trace = null;
+
+function traceStart() {
+  const root = document.createElement("div");
+  root.className = "trace";
+  root.dataset.state = "collapsed";
+  const head = document.createElement("button");
+  head.type = "button";
+  head.className = "trace-head";
+  head.setAttribute("aria-expanded", "false");
+  const caret = document.createElement("span");
+  caret.className = "trace-caret";
+  caret.textContent = "▶";
+  const title = document.createElement("span");
+  title.textContent = "运行详情";
+  const meta = document.createElement("span");
+  meta.className = "trace-meta";
+  meta.textContent = "准备中";
+  head.append(caret, title, meta);
+  const body = document.createElement("div");
+  body.className = "trace-body";
+  head.addEventListener("click", () => {
+    const expanded = root.dataset.state === "expanded";
+    root.dataset.state = expanded ? "collapsed" : "expanded";
+    head.setAttribute("aria-expanded", String(!expanded));
+  });
+  root.append(head, body);
+  streamEl.appendChild(root);
+  trace = { root, head, body, meta, count: 0, error: false, running: true };
+  scrollBottom();
+}
+
+function traceRefresh() {
+  if (!trace) return;
+  const parts = [`${trace.count} 步`, trace.running ? "运行中" : "已完成"];
+  if (trace.error) parts.push("含失败步骤");
+  trace.meta.textContent = parts.join(" · ");
+}
+
+function traceFinish() {
+  if (!trace) return;
+  trace.running = false;
+  traceRefresh();
+}
+
+function traceMarkError() {
+  if (!trace) return;
+  trace.error = true;
+  trace.root.classList.add("is-error");
+  trace.root.dataset.state = "expanded"; // 失败必须可见：自动展开
+  trace.head.setAttribute("aria-expanded", "true");
+  traceRefresh();
+}
+
 function addStepCard(text, opts = {}) {
   const el = document.createElement("div");
   el.className = "step" + (opts.isError ? " is-error" : "");
@@ -170,7 +232,13 @@ function addStepCard(text, opts = {}) {
     renderRich(body, text);
     el.appendChild(body);
   }
-  streamEl.appendChild(el);
+  // 有轨迹块时步骤卡都进轨迹（收起时不可见）；无轨迹时（维护提示等）直接进对话流
+  (trace ? trace.body : streamEl).appendChild(el);
+  if (trace) {
+    trace.count += 1;
+    if (opts.isError) traceMarkError();
+    else traceRefresh();
+  }
   scrollBottom();
   return el;
 }
@@ -368,6 +436,7 @@ async function sendQuestion(question) {
   sendBtn.disabled = true;
   questionInput.value = "";
   addUserMessage(question);
+  traceStart(); // 内部步骤进这个默认收起的块（回答/提问在块外）
   showFlowPanel();
   flowReset();
   setFlowStatus("运行中", "run");
@@ -393,6 +462,7 @@ async function sendQuestion(question) {
       const body = answerCard.querySelector(".body, .rich");
       if (body) body.classList.remove("cursor");
     }
+    traceFinish();
     busy = false;
     sendBtn.disabled = false;
   }

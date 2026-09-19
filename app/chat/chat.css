@@ -173,6 +173,43 @@ body {
 .step.is-error { border-left-color: var(--err); }
 .step.is-error .badge { color: var(--err); border-color: rgba(248, 81, 73, 0.45); }
 
+/* 运行轨迹折叠块（M6 UX）：默认收起，面试官只看得到问答，想深挖再点开。
+   收起态只留一行标题（步骤数 + 状态），展开态才显示内部步骤卡。*/
+.trace {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(148, 163, 184, 0.05);
+  overflow: hidden;
+}
+.trace-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 11px;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.trace-head:hover { color: var(--text); background: rgba(148, 163, 184, 0.07); }
+.trace-caret { font-size: 10px; transition: transform 0.15s ease; }
+.trace[data-state="expanded"] .trace-caret { transform: rotate(90deg); }
+.trace-meta { margin-left: auto; font-variant-numeric: tabular-nums; }
+.trace-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 8px 9px;
+  border-top: 1px dashed var(--border);
+}
+.trace[data-state="collapsed"] .trace-body { display: none; }
+.trace.is-error { border-color: rgba(248, 81, 73, 0.4); }
+.trace.is-error .trace-head { color: var(--err); }
+
 .msg-answer {
   background: var(--bg-soft);
   border-color: rgba(63, 185, 80, 0.28);
