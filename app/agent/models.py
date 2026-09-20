@@ -37,6 +37,7 @@ def build_openai_model(
     client: httpx.AsyncClient | None = None,
     *,
     connect_retries: int = 0,
+    max_tokens: int | None = None,
 ) -> Model:
     """构造走 OpenAI 兼容 chat/completions 的模型。
 
@@ -47,6 +48,10 @@ def build_openai_model(
     重试由 httpx 在**连接层**完成（ConnectError/ConnectTimeout），会重新建立连接，
     因此可绕过「部分后端 IP 的 TLS 证书链校验失败」这类单连接故障；每次尝试仍然
     完整校验证书，不降低安全性。默认 0 = 与旧行为完全一致（测试/自定义 client 不受影响）。
+
+    `max_tokens`：单次调用的输出上限（成本护栏）。None（默认）= 请求体不带该字段，
+    与旧行为逐字一致；非 None 时**流式与非流式两条路径都带上**——线上 `/chat` 走的是
+    流式，只在一条路径上加等于线上没有护栏，故两条路径共用同一份 payload 构造。
     """
 
     url = f"{base_url.rstrip('/')}/chat/completions"
@@ -58,6 +63,19 @@ def build_openai_model(
                 timeout=120.0,
             )
             self._owns_client = client is None
+            self._max_tokens = max_tokens
+
+        def _payload(self, messages: list[Message], tools: list[dict[str, Any]]) -> dict[str, Any]:
+            """请求体（两条路径共用，保证护栏不会只挂在其中一条上）。"""
+            payload: dict[str, Any] = {
+                "model": model_name,
+                "messages": messages,
+                "tools": tools,
+                "temperature": 0,
+            }
+            if self._max_tokens is not None:
+                payload["max_tokens"] = self._max_tokens
+            return payload
 
         async def chat(self, messages: list[Message], tools: list[dict[str, Any]]) -> Message:
             resp = await self._client.post(
@@ -66,12 +84,7 @@ def build_openai_model(
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 },
-                json={
-                    "model": model_name,
-                    "messages": messages,
-                    "tools": tools,
-                    "temperature": 0,
-                },
+                json=self._payload(messages, tools),
             )
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]
@@ -81,6 +94,8 @@ def build_openai_model(
 
             tool_calls 增量按 index 累积（部分端点把参数拆成多段）。
             """
+            body = self._payload(messages, tools)
+            body["stream"] = True
             async with self._client.stream(
                 "POST",
                 url,
@@ -88,13 +103,7 @@ def build_openai_model(
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 },
-                json={
-                    "model": model_name,
-                    "messages": messages,
-                    "tools": tools,
-                    "temperature": 0,
-                    "stream": True,
-                },
+                json=body,
             ) as resp:
                 resp.raise_for_status()
                 content_parts: list[str] = []

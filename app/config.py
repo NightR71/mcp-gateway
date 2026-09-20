@@ -192,6 +192,15 @@ class AgentConfig(BaseModel):
     model: str = "gpt-4o-mini"
     base_url: str = "https://api.openai.com/v1"
     max_rounds: int = 8
+    # 单次模型调用的输出 token 上限（**成本护栏**；与 max_rounds 一起构成双上限——
+    # max_rounds 管「最多问几轮」，本字段管「单次最多生成多少」）。
+    #
+    # None（默认）= **不下发该字段**，请求体与旧版逐字一致——离线 mock 与 CI 都不受影响。
+    # 要真正生效必须在 YAML 里显式赋值：`agent` 节只从 YAML 读取（M5 已知坑），
+    # 代码默认值不会自己出现。两份真模型配置（gateway.real.yaml / gateway.vercel.yaml）
+    # 显式设 1024：人设要求「第一个字就是答案正文」、回答量级几百字，1024 token
+    # ≈ 700+ 汉字余量充足，同时把单次输出的最坏成本压到提供方默认值（4096）的四分之一。
+    max_tokens: int | None = None
     routing_top_k: int = 10
     # 传输层连接重试次数（M5 真模型冒烟实测的必需项，默认 10）。
     #

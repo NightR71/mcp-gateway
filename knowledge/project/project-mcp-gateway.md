@@ -29,6 +29,7 @@ updated: 2026-09-20
 - **SSE 流式**：`/agent/run/stream`（step → token* → done）与 `/tools/{name}/call/stream`（start → result → done）。
 - **NL2SQL 双引擎**：13 条规则模板兜底 + 可选 LLM 增强（rule / llm / hybrid 三模式，LLM 不可用自动降级，结果标注引擎来源）。
 - **安全与多租户**：API Key 鉴权（SQLite 存储，`APIKeyStore` Protocol 可换 Redis/PostgreSQL）、令牌桶限流（429 + Retry-After；另支持小时桶，如访客 50 次/小时）、tenant + 工具白名单（403/404 语义区分）、白名单收口到调用点、入参设界、内部错误不透明化（不透明码 + 关联 ID）。
+- **成本护栏（双上限，服务端强制）**：`max_rounds` 限轮数（最多问几轮）+ `max_tokens` 限单次输出（一次最多生成多少，配置化于 `AgentConfig`，默认不下发该字段，真模型配置显式设值）；流式与非流式两条路径都带——线上 `/chat` 走流式，只在一条路径上加等于线上没护栏。
 - **可靠性**：失败 Server 指数退避自动重连（2s→60s）、`asyncio.timeout` 调用总超时（502 明确提示）、`classify_error()` 按 MCP SDK 错误码分类（-32000 断连 / -32001 超时）。
 - **可观测**：structlog 结构化 JSON 日志 + Prometheus 指标（工具调用次数/耗时，按 tool/server/status 维度）。
 - **交互工作台 /ui**：纯静态三件套（零构建链、零 CDN），调用链时间线 + 富渲染 + SVG 流程动画。
@@ -39,7 +40,7 @@ updated: 2026-09-20
 
 ## 结果
 
-- **379 项测试通过、1 项按环境跳过**（2026-09-20 `uv run pytest` 实测，随跑随更；含评测集 65 问的召回与红线零成本回归）；含 stdio/SSE/HTTP 真实子进程集成测试、inprocess 加载生产配置回归、kill 下游 Server 的故障注入自愈测试、安全加固用例（白名单击穿拦截 / 入参设界 / 错误脱敏 / 小时桶）。
+- **386 项测试通过、1 项按环境跳过**（2026-09-20 `uv run pytest` 实测，随跑随更；含评测集 65 问的召回与红线零成本回归）；含 stdio/SSE/HTTP 真实子进程集成测试、inprocess 加载生产配置回归、kill 下游 Server 的故障注入自愈测试、安全加固用例（白名单击穿拦截 / 入参设界 / 错误脱敏 / 小时桶）。
 - GitHub Actions CI（push/PR 自动 `uv sync --locked` + Ruff + pytest）；ruff check 与 format 全过。
 - Docker 双容器部署 + Vercel Serverless 部署，线上可体验：https://mcpgatewaydemo1.vercel.app/ui
 - MIT 开源（GitHub 仓库地址 `GITHUB_REPO_URL` 占位保留，T6 已定：暂不展示；被问仓库链接 → 「开源仓库详情建议直接与本人确认，线上演示入口在页面即可体验」）。
@@ -77,5 +78,5 @@ updated: 2026-09-20
 ## 可验证证据
 
 - 本仓库 README「设计决策与踩坑（ADR）」六条（含 M1 新增两条：SSE 中间件、脱敏收口）。
-- `uv run pytest` → 379 passed / 1 skipped（2026-09-20 实测）；`.github/workflows/ci.yml`；`vercel.json`、`docker-compose.yml`、`config/` 三套平台配置。
+- `uv run pytest` → 386 passed / 1 skipped（2026-09-20 实测）；`.github/workflows/ci.yml`；`vercel.json`、`docker-compose.yml`、`config/` 三套平台配置。
 - 线上体验：https://mcpgatewaydemo1.vercel.app/ui （演示 Key 见 README，公开信息）。

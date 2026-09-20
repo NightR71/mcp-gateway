@@ -39,6 +39,11 @@ RETIRED_PUBLIC_KEY = "dev-key-please-change"
 # auth.admin 节允许出现的键（配额策略；**凭据字段一律不允许**）
 ADMIN_SECTION_ALLOWLIST = {"tenant", "rate_limit_per_minute", "rate_limit_per_hour"}
 
+# 凭据字段名断言的例外（与 tests/test_m5_real_config.py 同口径）：`max_tokens` 是成本
+# 护栏字段名，含 "token" 子串但语义与凭据相反。例外集在 m5 那条
+# test_credential_field_exception_is_pinned 里被钉死为恰好这一项。
+CREDENTIAL_FIELD_EXCEPTIONS = {"max_tokens"}
+
 
 def _load(path: Path) -> dict[str, Any]:
     return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -57,6 +62,7 @@ def test_vercel_config_uses_real_model() -> None:
     assert agent["model"] == "deepseek-flash"
     assert agent["base_url"].rstrip("/") == "https://api.deepseek.com/v1"
     assert agent["max_rounds"] >= 1  # 成本护栏：轮数有界
+    assert agent["max_tokens"] >= 1  # 成本护栏：单次输出有上限（A-02 补齐，线上必须显式设）
 
 
 def test_online_and_smoke_configs_share_one_model_name() -> None:
@@ -68,13 +74,21 @@ def test_online_and_smoke_configs_share_one_model_name() -> None:
     smoke = _load(CONFIG_DIR / "gateway.real.yaml")["agent"]
     assert online["model"] == smoke["model"], "线上与冒烟配置的模型名不一致"
     assert online["base_url"].rstrip("/") == smoke["base_url"].rstrip("/")
+    # 成本护栏同理：两处取值不同会让"本机冒烟"验证不了线上的输出上限
+    assert online["max_tokens"] == smoke["max_tokens"], "线上与冒烟配置的 max_tokens 不一致"
 
 
 def test_vercel_config_has_no_credential_fields() -> None:
-    """线上配置不得出现任何凭据字段：模型 Key 与管理员 Key 都只走环境变量。"""
+    """线上配置不得出现任何凭据字段：模型 Key 与管理员 Key 都只走环境变量。
+
+    例外：`max_tokens`（成本护栏字段名，含 "token" 子串但语义与凭据相反）。
+    与 tests/test_m5_real_config.py 同口径，例外集在那里被钉死为恰好这一项。
+    """
     text = VERCEL_CONFIG.read_text(encoding="utf-8")
     agent = _load(VERCEL_CONFIG)["agent"]
     for field in agent:
+        if field in CREDENTIAL_FIELD_EXCEPTIONS:
+            continue
         assert not re.search(r"(?i)key|token|secret|password", field), field
     # 环境变量名可以出现在注释里（部署说明），但**值**不允许出现任何形似密钥的字面量
     assert not re.search(r"sk-[A-Za-z0-9_\-]{12,}", text), "线上配置里出现了形似模型 Key 的字面量"

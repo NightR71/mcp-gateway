@@ -69,6 +69,9 @@ servers:
 #   注意：**迁移模型属于 M6 规定"必须重跑冒烟"的变更**——本轮未在本机重跑（本机无 Key），
 #   已如实记入 docs/M6-上线报告.md §4.1 与 §5，行为验证由线上复验 + 拨测承担。
 # - `model_connect_retries` 不显式写：用默认值 10（M5 实测口径，见 app/config.py 的长注释）。
+# - `max_tokens: 1024` 单次输出上限（成本护栏，2026-09-20 反测 A-02 补齐）：**必须显式写**，
+#   `agent` 节只从 YAML 读取，代码默认 None = 不带该字段 = 输出长度交给提供方默认值。
+#   1024 token ≈ 700+ 汉字，对人设要求的短答余量充足，同时把单次最坏成本压到默认值的 1/4。
 # - temperature 由 app/agent/models.py 固定为 0，保证同一问题答案稳定可回归。
 # - 简历 Agent 为 real-model-only：没有 Key 或模型不可用时 /chat 显示维护页，
 #   绝不用 mock 剧本冒充回答（执行计划 §2 决策 6）——所以本文件里没有 mock 开关。
@@ -78,6 +81,7 @@ agent:
   model: deepseek-flash
   base_url: https://api.deepseek.com/v1
   max_rounds: 8
+  max_tokens: 1024
   routing_top_k: 10
 
 # M3 应用层配置（人设 / 红线拒答 / 输出守门）已独立到 config/resume_kb.yaml：

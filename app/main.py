@@ -117,6 +117,7 @@ def _build_agent_runner(registry: ToolRegistry, router: ToolRouter) -> AgentRunn
         api_key,
         config.model,
         connect_retries=config.model_connect_retries,
+        max_tokens=config.max_tokens,
     )
     return AgentRunner(
         registry,

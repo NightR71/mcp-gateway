@@ -3,7 +3,7 @@
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-asyncio-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![MCP](https://img.shields.io/badge/MCP-官方SDK-8A2BE2)](https://modelcontextprotocol.io/)
-[![Tests](https://img.shields.io/badge/tests-379%20passed-3FB950)](.github/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-386%20passed-3FB950)](.github/workflows/ci.yml)
 [![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?logo=githubactions&logoColor=white)](.github/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
@@ -38,7 +38,7 @@
 - **交互式 AI 简历助手 `/chat`（M4）**：纯静态移动端优先三区布局（主体对话流 / 右栏项目气泡卡 + 简历卡 / 对话态运行流程图），SSE 逐字渲染；运行流程由**真实 `step` 事件驱动节点逐个点亮**（流式异常才降级为预定义示意）；窄屏下气泡横向滚动、对话与流程可切换；无模型或未放行演示时显示维护页，不用假剧本冒充回答
 - **简历知识库只读服务（M3）**：`servers/resume_kb_server/` 只读工具集（`search_knowledge` / `get_card` / `list_cards` / `get_profile`），检索 `knowledge/` 下的 Markdown 知识卡片（YAML frontmatter + 中文 2-gram 检索）；访客 Key 白名单通配 `resume_kb__*`
 - **回答可控的三道闸**：人设系统提示词（客观克制 + 拒答红线 + 防注入约束）、输入侧固定回应（命中红线词即直接返回话术、**不进模型**）、输出守门（流式滑动窗口扫描手机号 / 邮箱等 PII 并即时打码）——全部配置化于 `config/resume_kb.yaml`，改文案不动代码
-- **线上护栏**：访客 Key 只能调知识库工具且限 50 次/小时；另有 `agent_allowed: false` 的只读验证 Key（在线证明"公开 Key 即便泄露也烧不到模型余额"）；管理员凭 `GATEWAY_ADMIN_KEY` 调 `/admin/mode` 在 public / internal / closed 三态间切换（应急成本闸门）；GitHub Actions 每 6 小时拨测一轮（10 步编号断言 + 诊断 + 失败自动开 issue，含真实模型连通性与回答质量断言）
+- **线上护栏**：访客 Key 只能调知识库工具且限 50 次/小时；单次问答的 token 有界——`max_rounds` 限轮数、`max_tokens` 限单次输出（服务端在请求体里强制，流式与非流式两条路径都带）；另有 `agent_allowed: false` 的只读验证 Key（在线证明"公开 Key 即便泄露也烧不到模型余额"）；管理员凭 `GATEWAY_ADMIN_KEY` 调 `/admin/mode` 在 public / internal / closed 三态间切换（应急成本闸门）；GitHub Actions 每 6 小时拨测一轮（10 步编号断言 + 诊断 + 失败自动开 issue，含真实模型连通性与回答质量断言）
 - **脱敏 `/resume` 页**：零联系方式、零成绩主张、雇主一律行业描述
 
 ### 基础设施层
@@ -173,7 +173,7 @@ Streamable HTTP，网关经 `http://demo_sql:9001/mcp` 连接。
 
 ## 测试与质量
 
-- **379 项测试**（`uv run pytest`，2026-09-20 实测，另有 1 例按环境跳过；随开发增长，知识库与被核对时给精确值 + 日期）：stdio/SSE/HTTP 真实子进程集成测试、inprocess 加载 Vercel 生产配置回归测试、kill 下游 Server 后自动恢复的故障注入测试、安全前置用例（白名单击穿拦截 / 入参设界 413·422 / 错误不透明化含 Agent 步骤出口 / 小时桶 + /metrics 策略）、评测集零成本回归（65 问的召回 / 红线命中 / 防误伤）、简历知识库用例（知识库数据质量含 PII 零入断言 / 语义召回 / 白名单通配 / 人设注入与固定回应 / 输出守门流式打码）
+- **386 项测试**（`uv run pytest`，2026-09-20 实测，另有 1 例按环境跳过；随开发增长，知识库与被核对时给精确值 + 日期）：stdio/SSE/HTTP 真实子进程集成测试、inprocess 加载 Vercel 生产配置回归测试、kill 下游 Server 后自动恢复的故障注入测试、安全前置用例（白名单击穿拦截 / 入参设界 413·422 / 错误不透明化含 Agent 步骤出口 / 小时桶 + /metrics 策略）、成本护栏用例（`max_tokens` 流式与非流式两条路径都进请求体 / 默认不下发该字段 / YAML 显式配置才生效）、评测集零成本回归（65 问的召回 / 红线命中 / 防误伤）、简历知识库用例（知识库数据质量含 PII 零入断言 / 语义召回 / 白名单通配 / 人设注入与固定回应 / 输出守门流式打码）
 - `ruff check` + `ruff format --check` 全过；GitHub Actions 在 push / PR 时执行 `uv sync --locked` + Ruff + pytest
 - 兼容红线：`/tools`、`/tools/{name}/call`、`/servers` 等公开契约只做增量扩展；examples/ 与网关双向无依赖
 
@@ -216,6 +216,14 @@ config/                    各平台配置（本地 stdio / Docker http / Vercel
 - [ ] embedding 语义路由（Scorer 已预留接口）
 - [ ] Redis 分布式限流 + Key 哈希存储
 - [ ] OpenTelemetry 链路追踪 / 压测报告
+
+## 关于第三方名称（声明）
+
+本仓库是**个人求职用的作品集仓库**，用于在面试中展示本人的工程实践。其中的经历描述均为本人真实经历，并已按行业口径脱敏：知识库卡片、`/resume` 页面与线上回答里**不含真实公司名**（这一条是被测试与拨测持续断言的，见 `tests/test_servers/test_resume_kb.py` 与 `.github/workflows/demo-health.yml`）。
+
+测试与拨测代码中保留了少量真实公司名称，用途是**反向校验**——它们是一份「禁止出现」清单，断言这些名称不会出现在知识库、前端产物与线上回答里（没有这份清单，这条红线就无法被自动验证）。此外，项目背景源于本人真实工作经历，相关技术选型与业务场景在描述上难以完全避免指向具体雇主。
+
+如相关公司认为上述提及不妥，请在本仓库提交 issue 与我联系，我会立即删除相关内容。
 
 ## License
 

@@ -94,6 +94,9 @@ agent:
   model: deepseek-flash
   base_url: https://api.deepseek.com/v1
   max_rounds: 8
+  # 单次输出上限（成本护栏，2026-09-20 反测 A-02 补齐；与 vercel 配置同值同口径）。
+  # 必须显式写：`agent` 节只从 YAML 读，代码默认 None = 不带该字段 = 交给提供方默认值。
+  max_tokens: 1024
   routing_top_k: 10
 
 # servers 与本地配置一致：demo_sql 走 stdio（本机有 python），resume_kb 走 inprocess

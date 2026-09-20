@@ -41,8 +41,18 @@ AGENT_FIELD_ALLOWLIST = {
     "model",
     "base_url",
     "max_rounds",
+    "max_tokens",
     "routing_top_k",
 }
+
+# 凭据字段名断言用的正则（子串匹配，故意保守）
+CREDENTIAL_FIELD_PATTERN = re.compile(r"(?i)key|token|secret|password")
+
+# 该断言的**唯一例外**：`max_tokens` 是成本护栏字段名，含 "token" 子串但语义与凭据相反
+# （它是「单次最多生成多少」，不是「凭据」）。例外集必须恰好是这一项——由下面的
+# test_credential_field_exception_is_pinned 钉死：新增豁免必须同步改那条测试，
+# 保证豁免口是评审可见的。tests/test_m6_config_contract.py 里有一份同口径的副本。
+CREDENTIAL_FIELD_EXCEPTIONS = {"max_tokens"}
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -82,14 +92,48 @@ def test_no_credential_literals_in_any_config() -> None:
 
 
 def test_agent_section_has_no_credential_field() -> None:
-    """agent 节只允许登记白名单内的键，且不含任何以 key/token/secret 命名的字段。"""
+    """agent 节只允许登记白名单内的键，且不含任何以 key/token/secret 命名的字段。
+
+    例外规则见 CREDENTIAL_FIELD_EXCEPTIONS（当前仅 `max_tokens`，且被下面的用例钉死）。
+    """
     for path in sorted(CONFIG_DIR.glob("*.yaml")):
         agent = _load(path).get("agent")
         if agent is None:
             continue
         assert set(agent) <= AGENT_FIELD_ALLOWLIST, f"{path.name} 的 agent 节含未登记字段"
         for field in agent:
-            assert not re.search(r"(?i)key|token|secret|password", field), path.name
+            if field in CREDENTIAL_FIELD_EXCEPTIONS:
+                continue
+            assert not CREDENTIAL_FIELD_PATTERN.search(field), f"{path.name} 字段 {field} 形似凭据"
+
+
+def test_credential_field_exception_is_pinned() -> None:
+    """豁免口必须恰好只有 `max_tokens`，且真实凭据字段名一个都不许漏网。
+
+    这是「安全断言被放宽」这件事的可审计凭据：想再添一个豁免，必须同时改这条测试
+    （评审必然看见）；下面这组正例则保证放宽只针对成本护栏这一个名字。
+    """
+    assert CREDENTIAL_FIELD_EXCEPTIONS == {"max_tokens"}
+    for name in (
+        "key",
+        "api_key",
+        "openai_api_key",
+        "token",
+        "access_token",
+        "refresh_token",
+        "secret",
+        "client_secret",
+        "password",
+        "db_password",
+    ):
+        assert CREDENTIAL_FIELD_PATTERN.search(name), f"凭据字段名 {name} 未被拦截"
+    # 例外存在的理由：正则**确实**命中这个字段名（子串 "token"）——它是成本护栏、
+    # 语义与凭据相反，所以是"显式豁免"，而不是"正则其实没命中"。
+    assert CREDENTIAL_FIELD_PATTERN.search("max_tokens")
+    # 豁免按字段名精确匹配：形近名（含 token 的其它写法）一律不放行
+    for name in ("max_tokens_key", "max_tokens2", "api_max_tokens", "tokens"):
+        assert name not in CREDENTIAL_FIELD_EXCEPTIONS
+        assert CREDENTIAL_FIELD_PATTERN.search(name), name
 
 
 # ---------------------------------------------------------------------------
@@ -110,6 +154,7 @@ def test_real_config_switches_agent_to_real_model(monkeypatch: pytest.MonkeyPatc
     assert config.model == "deepseek-flash"
     assert config.base_url.rstrip("/") == "https://api.deepseek.com/v1"
     assert config.max_rounds >= 1  # 成本护栏：轮数与工具注入数都须有界
+    assert config.max_tokens == 1024  # 成本护栏：单次输出上限（A-02 补齐，且必须显式写 YAML）
 
 
 def test_real_config_declares_knowledge_base_and_demo_server(
