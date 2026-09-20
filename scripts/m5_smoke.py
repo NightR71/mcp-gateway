@@ -132,7 +132,7 @@ STEP0_CASES: tuple[Case, ...] = (
         "请介绍一下你自己",
         ("profile-basic", "evidence-main-story"),
         forbid=("156", "138", "155"),
-        note="自我介绍；测试数只说口头下限式 190+",
+        note="自我介绍；测试数只说口头下限式 370+",
     ),
     Case("A2", "A", "讲讲你的经历主线", ("evidence-main-story",), note="三层框架"),
     Case("B1", "B", "为什么做这个网关？解决什么问题", ("project-mcp-gateway",), note="三痛点"),
